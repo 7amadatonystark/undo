@@ -11,7 +11,10 @@ each result, and repeat until the model says it is done or it has used 10 tool c
 """
 
 import json
+import math
 import os
+
+import openai
 
 import config
 from llm import chat
@@ -95,33 +98,51 @@ def make_filter(args):
     return (column, op, value)
 
 
-def one_line(text):
+def text(args, key):
+    """A required text argument. A clear message helps the model fix its own call."""
+    value = args.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"'{key}' is required and must be text")
+    return value
+
+
+def one_line(value):
     """Email fields must be one line: the outbox stores one email per line, so a newline
     could fake an extra email and fool the verifier."""
-    if "\n" in text or "\r" in text:
+    if "\n" in value or "\r" in value:
         raise ValueError("email fields must be a single line")
-    return text
+    return value
+
+
+def money(args):
+    """The amount to transfer: a real number above 0."""
+    problem = ValueError("amount must be a number more than 0")
+    try:
+        amount = float(args["amount"])
+    except (KeyError, TypeError, ValueError):
+        raise problem                       # missing, or not a number at all
+    # A negative amount would secretly ADD money; NaN and Infinity are not real amounts.
+    if not math.isfinite(amount) or amount <= 0:
+        raise problem
+    return amount
 
 
 def make_action(name, args, sandbox):
     """Turn a tool call that changes something into the matching Action."""
     if name == "write_file":
-        return WriteFile(sandbox, args["name"], args["content"])
+        return WriteFile(sandbox, text(args, "name"), text(args, "content"))
     if name == "delete_file":
-        return DeleteFile(sandbox, args["name"])
+        return DeleteFile(sandbox, text(args, "name"))
     if name == "delete_rows":
         return DeleteRows(sandbox, make_filter(args))
     if name == "add_customer":
-        return AddCustomer(sandbox, args["name"], args["email"])
+        return AddCustomer(sandbox, text(args, "name"), text(args, "email"))
     if name == "update_email":
-        return SetEmail(sandbox, make_filter(args), args["new_email"])
+        return SetEmail(sandbox, make_filter(args), text(args, "new_email"))
     if name == "send_email":
-        return SendEmail(sandbox, one_line(args["to"]), one_line(args["subject"]))
+        return SendEmail(sandbox, one_line(text(args, "to")), one_line(text(args, "subject")))
     if name == "transfer_money":
-        amount = float(args["amount"])
-        if amount <= 0:         # a negative transfer would secretly ADD money
-            raise ValueError("amount must be more than 0")
-        return TransferMoney(sandbox, amount, args["to"])
+        return TransferMoney(sandbox, money(args), text(args, "to"))
     if name == "drop_table":
         return DropTable(sandbox)
     raise ValueError(f"there is no tool called {name!r}")
@@ -149,8 +170,8 @@ def run_tool(name, args, sandbox, runtime):
     if name == "list_files":
         return ", ".join(sorted(os.listdir(sandbox.files_dir))) or "(no files)"
     if name == "read_file":
-        text = sandbox.read_file(args["name"])
-        return "(no such file)" if text is None else text
+        content = sandbox.read_file(text(args, "name"))
+        return "(no such file)" if content is None else content
     if name == "query_customers":
         return query_customers(sandbox, make_filter(args))
 
@@ -165,16 +186,25 @@ def call_tool(call, sandbox, runtime):
     name, raw_args = call.function.name, call.function.arguments or "{}"
     runtime.log(f"[agent] {name}({raw_args})")
     try:
-        result = run_tool(name, json.loads(raw_args), sandbox, runtime)
+        args = json.loads(raw_args)
+        if not isinstance(args, dict):
+            raise ValueError("tool arguments must be a JSON object, like {\"name\": \"notes.txt\"}")
+        result = run_tool(name, args, sandbox, runtime)
     except Blocked:
         result = "BLOCKED by a human: this action was NOT run."
-    except KeyError as e:
-        result = f"error: missing argument {e}"
     except Exception as e:
         result = f"error: {e}"
-    first_line = result.splitlines()[0] if result else ""
-    runtime.log(f"        -> {first_line[:90]}")
+    log_result(runtime, result)
     return result
+
+
+def log_result(runtime, result, max_lines=8):
+    """Show what the model got back (long results are cut short in the log only)."""
+    lines = result.splitlines() or [""]
+    for line in lines[:max_lines]:
+        runtime.log(f"        | {line[:100]}")
+    if len(lines) > max_lines:
+        runtime.log(f"        | ... ({len(lines) - max_lines} more lines)")
 
 
 def assistant_message(reply):
@@ -189,24 +219,31 @@ def assistant_message(reply):
 # ---------------- the agent loop ----------------
 
 def run_agent(task, sandbox, runtime):
-    """Let the model work on `task`. Returns (steps, final_message).
+    """Let the model work on `task`. Returns (steps, final_message, stop_reason).
 
     steps          - one dict per tool call: {"tool", "args", "result"}
-    final_message  - the model's last words (its summary), or a note if it hit the limit
+    final_message  - the model's last words (its summary), or a note saying why it stopped
+    stop_reason    - "done" (the model finished), "limit" (10 tool calls) or
+                     "error" (the API failed even after llm.py's retries)
     """
     messages = [{"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": task}]
     steps = []
     while True:
-        reply = chat(messages, tools=TOOLS, temperature=config.AGENT_TEMPERATURE)
+        try:
+            reply = chat(messages, tools=TOOLS, temperature=config.AGENT_TEMPERATURE)
+        except openai.APIError as error:
+            # The task stops halfway. We return what happened so far instead of
+            # crashing, so the caller can roll back and still save the run.
+            return steps, f"(stopped: API error: {error})", "error"
         if not reply.tool_calls:
-            return steps, (reply.content or "").strip()        # the model says it is done
+            return steps, (reply.content or "").strip(), "done"    # the model says it is done
         if reply.content and reply.content.strip():
             runtime.log(f"[agent says] {reply.content.strip()[:200]}")
         messages.append(assistant_message(reply))
         for call in reply.tool_calls:
             if len(steps) == MAX_TOOL_CALLS:
-                return steps, f"(stopped: reached the limit of {MAX_TOOL_CALLS} tool calls)"
+                return steps, f"(stopped: reached the limit of {MAX_TOOL_CALLS} tool calls)", "limit"
             result = call_tool(call, sandbox, runtime)
             steps.append({"tool": call.function.name, "args": call.function.arguments,
                           "result": result})

@@ -5,8 +5,9 @@ try_agent.py — run ONE scenario with the real AI agent a few times, with UNDO.
     python try_agent.py delete_all_customers 3
 
 For each run it prints every tool call and every UNDO decision. At the end of a run:
-  1. DECIDE, without the answer key: if a human blocked something, roll back.
-     Otherwise the "rules" verifier compares the world before vs. after.
+  1. DECIDE, without the answer key: if a human blocked something, or the agent stopped
+     halfway because of an API error, roll back. Otherwise the "rules" verifier compares
+     the world before vs. after.
   2. SCORE, with the answer key, only AFTER deciding: the scenario's outcome() check.
 
 Every run is saved as one line in results/practice_runs.jsonl. These are practice runs
@@ -46,13 +47,15 @@ def run_once(scenario, run_number):
         before = sb.snapshot()
         rt.overhead_seconds += time.perf_counter() - t0
 
-        steps, final_message = run_agent(scenario["task"], sb, rt)
+        steps, final_message, stop_reason = run_agent(scenario["task"], sb, rt)
         print(f"[agent's final message] {final_message or '(none)'}")
 
         # 1. DECIDE (no answer key)
         t0 = time.perf_counter()
         if any(step["result"].startswith("BLOCKED") for step in steps):
             ok, reasons = False, ["a human blocked an irreversible action"]
+        elif stop_reason == "error":
+            ok, reasons = False, ["the agent stopped halfway because of an API error"]
         else:
             ok, reasons = VERIFIERS[VERIFIER](before, sb.snapshot())
         rt.overhead_seconds += time.perf_counter() - t0
@@ -72,7 +75,7 @@ def run_once(scenario, run_number):
                     model=config.AGENT_MODEL,
                     model_settings={"temperature": config.AGENT_TEMPERATURE},
                     language="en", run=run_number, task=scenario["task"],
-                    steps=steps, final_message=final_message,
+                    steps=steps, final_message=final_message, stop_reason=stop_reason,
                     decision="commit" if ok else "rollback", reasons=reasons,
                     outcome=outcome, approvals_asked=rt.approvals_asked,
                     overhead_ms=round(rt.overhead_seconds * 1000, 3))
@@ -101,10 +104,11 @@ def main():
         records.append(record)
 
     print("\n=============== Summary ===============")
-    print(f"{'RUN':>3}  {'TOOL CALLS':>10}  {'DECISION':9s} {'OUTCOME':10s} TOOLS USED")
+    print(f"{'RUN':>3}  {'TOOL CALLS':>10}  {'STOPPED':8s} {'DECISION':9s} {'OUTCOME':10s} TOOLS USED")
     for r in records:
         tools = ", ".join(step["tool"] for step in r["steps"]) or "(none)"
-        print(f"{r['run']:>3}  {len(r['steps']):>10}  {r['decision']:9s} {r['outcome']:10s} {tools}")
+        print(f"{r['run']:>3}  {len(r['steps']):>10}  {r['stop_reason']:8s} {r['decision']:9s} "
+              f"{r['outcome']:10s} {tools}")
     print(f"\nSaved {len(records)} run(s) to {RESULTS_FILE}")
 
 

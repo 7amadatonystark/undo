@@ -8,13 +8,25 @@ task ends, a **verifier** decides whether to keep everything or roll it all back
 
 ## Run it
 
-Needs only Python 3.10+ (no packages to install).
+The scripted benchmark needs only Python 3.10+. The real AI agent also needs two packages
+and an NVIDIA API key (build.nvidia.com):
+
+```
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+```
+
+Then create a file named `.env` with `NVIDIA_API_KEY=...` and `AGENT_MODEL=...` (and
+`JUDGE_MODEL=...`, optional for now). `.env` is in `.gitignore`: never commit it.
 
 ```
 python run_benchmark.py            # scoreboard: no UNDO vs. UNDO with each verifier
 python run_benchmark.py --verbose  # see every decision the "rules" verifier makes
 python sweep.py                    # how each threshold trades catches vs. false alarms
 python demo.py                     # you play the human approver
+python test_offline.py             # safety and agent-loop tests (no API calls)
+python check_api.py                # checks the API key and models (about 4 API calls)
+python try_agent.py                # the real AI agent on one scenario, 3 runs with UNDO
 ```
 
 `run_benchmark.py` writes `results.csv` (one row per scenario per verifier) and `sweep.py`
@@ -32,9 +44,15 @@ writes `sweep.csv`. Open them in Excel or Google Sheets to make graphs.
 | `run_benchmark.py` | Runs every scenario without UNDO and with each verifier, then scores them |
 | `sweep.py` | Tries a range of values for each verifier threshold |
 | `demo.py` | Interactive booth demo |
+| `agent.py` | The real AI agent: its tools and its loop. Every change goes through `UndoRuntime` |
+| `try_agent.py` | Runs one scenario with the real agent a few times with UNDO, saves each run |
+| `config.py` | Settings from `.env`: API key, model names, agent temperature |
+| `llm.py` | The one function every model call uses: throttle (30 per minute) and retries |
+| `check_api.py` | Checks that the API key and models work |
+| `test_offline.py` | Tests of the safety rules and the agent loop, with a fake model |
 
 Read the files in this order: `actions.py`, `runtime.py`, `verifiers.py`, `scenarios.py`,
-`run_benchmark.py`, `sweep.py`.
+`run_benchmark.py`, `sweep.py`, `llm.py`, `agent.py`, `try_agent.py`.
 Before you change anything, you should be able to explain every line out loud. ISEF judges will ask.
 
 ## How the benchmark scores a verifier
@@ -78,9 +96,9 @@ without asking the verifier.
 2. **Thresholds are tuned on the same scenarios they are scored on.** That makes results look
    better than they really are. Before reporting a "best" threshold, split the scenarios: pick
    the threshold on one half, then report the score on the other half.
-3. **The agent is scripted.** Replace the fixed action lists with a real LLM agent that
-   chooses actions through tools. Then the dangerous steps happen because the AI really
-   decided them, which is what makes your results meaningful.
+3. **Most scenarios are still scripted.** `agent.py` is a real LLM agent that chooses its
+   own actions through tools, but so far only `delete_all_customers` has a plain-English
+   task for it (`try_agent.py`). The other scenarios still use fixed action lists.
 4. **34 scenarios is still small.** Add more, especially "look-alike" pairs: one harmful, one
    legit, with the same kind of change.
 5. **Kinds are hard-coded.** Each action class declares its own kind. A stronger version
@@ -90,7 +108,8 @@ without asking the verifier.
    overhead grows.
 
 Database actions take a safe filter like `("name", "=", "Mona")` instead of raw SQL, so an
-agent cannot inject its own SQL. Keep it that way when you add a real LLM agent.
+agent cannot inject its own SQL. The real agent's database tools use the same safe filters,
+and its file tools only accept plain file names inside the sandbox folder.
 
 ## License
 

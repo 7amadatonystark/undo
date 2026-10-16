@@ -16,6 +16,23 @@ import shutil
 import sqlite3
 import tempfile
 
+# Windows file-name rules. A ":" would create a HIDDEN stream inside a file
+# ("report.txt:hidden") that snapshot() cannot see, and names like NUL or CON
+# are devices, not files.
+FORBIDDEN_CHARACTERS = set('<>:"/\\|?*')
+DEVICE_NAMES = {"CON", "PRN", "AUX", "NUL"} | {f"{d}{i}" for d in ("COM", "LPT") for i in range(1, 10)}
+
+
+def is_plain_file_name(name):
+    """True for a simple name like 'notes.txt' that can only mean a file in our folder."""
+    if not isinstance(name, str) or name in ("", ".", ".."):
+        return False
+    if any(ch in FORBIDDEN_CHARACTERS or ord(ch) < 32 for ch in name):
+        return False                          # folders, hidden streams, control characters
+    if name != name.rstrip(" ."):
+        return False                          # Windows silently drops trailing dots and spaces
+    return name.split(".")[0].upper() not in DEVICE_NAMES
+
 
 class Sandbox:
     def __init__(self):
@@ -55,7 +72,7 @@ class Sandbox:
     def path(self, name):
         # Only plain file names like "notes.txt". An AI agent could otherwise ask
         # for "../../secret.txt" and reach files outside the sandbox folder.
-        if not name or name != os.path.basename(name) or name in (".", ".."):
+        if not is_plain_file_name(name):
             raise ValueError(f"not allowed: {name!r} (only plain file names, no folders)")
         return os.path.join(self.files_dir, name)
 
