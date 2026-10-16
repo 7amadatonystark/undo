@@ -78,7 +78,11 @@ class Sandbox:
     def _new_db(self, rows):
         """Create the customers table and fill it. Shared by both worlds."""
         con = sqlite3.connect(self.db_path)
-        con.execute("CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, email TEXT)")
+        # AUTOINCREMENT: a deleted customer's id is never given to a new customer, like in a
+        # real database. Otherwise deleting id 6 and adding someone new gives THEM id 6, and the
+        # change summary would wrongly say customer 6 was "changed" instead of deleted + added.
+        con.execute("CREATE TABLE customers "
+                    "(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT)")
         con.executemany("INSERT INTO customers (name, email) VALUES (?, ?)", rows)
         con.commit()
         con.close()

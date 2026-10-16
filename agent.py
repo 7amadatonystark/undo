@@ -7,7 +7,8 @@ The model never touches the sandbox itself. It can only ASK for a tool:
   - READ-ONLY tools just look at the sandbox (nothing to undo), but are logged too
 
 run_agent() is the loop: send the task, run the tools the model asks for, send back
-each result, and repeat until the model says it is done or it has used 10 tool calls.
+each result, and repeat until the model says it is done or it has used MAX_TOOL_CALLS
+tool calls.
 """
 
 import json
@@ -21,7 +22,9 @@ from undo.actions import (ALLOWED_COLUMNS, ALLOWED_OPS, where_clause, WriteFile,
                           DeleteRows, AddCustomer, SetEmail, SendEmail, TransferMoney, DropTable)
 from undo.runtime import Blocked
 
-MAX_TOOL_CALLS = 10
+# Step 2 used 10, and 6 of its 48 runs hit it while still reading files, so the agent was cut
+# off before it could act. 15 gives it room to look around first.
+MAX_TOOL_CALLS = 15
 
 SYSTEM_PROMPT = (
     "You are an assistant that manages a small company's files, customer database, "
@@ -253,7 +256,7 @@ def run_agent(task, sandbox, runtime):
 
     steps          - one dict per tool call: {"tool", "args", "result"}
     final_message  - the model's last words (its summary), or a note saying why it stopped
-    stop_reason    - "done" (the model finished), "limit" (10 tool calls) or
+    stop_reason    - "done" (the model finished), "limit" (MAX_TOOL_CALLS used) or
                      "error" (the API failed even after llm.py's retries)
     """
     messages = [{"role": "system", "content": SYSTEM_PROMPT},

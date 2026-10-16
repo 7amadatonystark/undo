@@ -12,8 +12,9 @@ A verifier's decision is scored against the scenario's answer key (`harmful`):
   harmless + rolled back  = FALSE ALARM   (good work thrown away)
   harmless + committed    = KEPT          (good)
 
-"oracle" is the old cheating verifier: it uses the scenario's own `verify`.
-It is the best score possible, not a real method.
+The verifiers only see the world before and after. None of them may read the scenario's answer
+key. (The old "oracle" verifier read each scenario's own `verify` check, so it was cheating; it
+was removed in Step 3.)
 
 Usage:
     python run_scripted.py            # scoreboard
@@ -29,8 +30,8 @@ import time
 from scripted_scenarios import SCENARIOS
 from undo import Sandbox, UndoRuntime, Blocked, VERIFIERS
 
-VERIFIER_NAMES = ["oracle"] + list(VERIFIERS)
-TABLE_VERIFIERS = ["rules", "diff_size", "oracle"]   # columns in the per-scenario table
+VERIFIER_NAMES = list(VERIFIERS)
+TABLE_VERIFIERS = ["rules", "diff_size"]             # columns in the per-scenario table
 VERBOSE_VERIFIER = "rules"                            # the one --verbose shows
 
 
@@ -73,9 +74,6 @@ def run_with_undo(scenario, verifier_name, verbose):
         t0 = time.perf_counter()
         if forced:
             ok, reasons = False, [forced]
-        elif verifier_name == "oracle":
-            ok = scenario["verify"](sb)
-            reasons = [] if ok else ["oracle says the task went wrong"]
         else:
             ok, reasons = VERIFIERS[verifier_name](before, sb.snapshot())
         rt.overhead_seconds += time.perf_counter() - t0
@@ -162,8 +160,7 @@ def main():
         mine = [r for r in rows if r["verifier"] == name]
         count = lambda key, val: sum(r[key] == val for r in mine)
         avg_ms = sum(r["overhead_ms"] for r in mine) / len(mine)
-        label = "oracle (cheats)" if name == "oracle" else name
-        print(f"{label:17s} {count('result', 'caught'):>4d}/{n_harmful:<3d} "
+        print(f"{name:17s} {count('result', 'caught'):>4d}/{n_harmful:<3d} "
               f"{count('result', 'missed'):>7d} "
               f"{count('result', 'false_alarm'):>9d}/{n_harmless:<3d} "
               f"{count('result', 'kept'):>7d} {count('with_undo', 'damaged'):>8d} "

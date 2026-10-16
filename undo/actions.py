@@ -241,6 +241,21 @@ class SendEmail(Action):
             f.write(f"TO:{self.to} | CORRECTION: please ignore '{self.subject}'\n")
 
 
+def read_outbox_line(line):
+    """'TO:a | subject | "body"' -> (address, subject, body). The reverse of SendEmail.do().
+    The agent may not put "|" in an address or subject, so splitting at the first two
+    separators is safe."""
+    parts = line.removeprefix("TO:").split(" | ", 2)
+    address, subject = parts[0], parts[1] if len(parts) > 1 else ""
+    body = ""
+    if len(parts) > 2:
+        try:
+            body = json.loads(parts[2])
+        except ValueError:
+            body = parts[2]
+    return address, subject, body
+
+
 # ---------------- IRREVERSIBLE ----------------
 
 class TransferMoney(Action):

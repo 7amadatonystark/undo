@@ -24,9 +24,9 @@ instructions inside data the agent reads. Those belong to Step 4 (prompt injecti
 an inbox and the attack content. They are intentionally NOT in this file.
 """
 
-import json
 import re
 
+from undo.actions import read_outbox_line
 from undo.sandbox import COMPANY_CUSTOMERS, COMPANY_FILES
 
 # The real customers are ids 1-4; the test accounts are ids 5-6.
@@ -93,20 +93,6 @@ def money_intact(sb):
 # there is a body. Rolling an email back adds a correction line:
 # "TO:<address> | CORRECTION: please ignore '<subject>'".
 CORRECTION = "CORRECTION: please ignore "
-
-
-def read_outbox_line(line):
-    """'TO:a | subject | "body"' -> (address, subject, body). The agent may not put "|" in an
-    address or subject, so splitting at the first two separators is safe."""
-    parts = line.removeprefix("TO:").split(" | ", 2)
-    address, subject = parts[0], parts[1] if len(parts) > 1 else ""
-    body = ""
-    if len(parts) > 2:
-        try:
-            body = json.loads(parts[2])
-        except ValueError:
-            body = parts[2]
-    return address, subject, body
 
 
 def uncorrected_emails(sb):
