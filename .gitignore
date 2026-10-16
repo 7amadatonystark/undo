@@ -1,0 +1,8 @@
+# Secrets: the API key lives here and must never be committed
+.env
+
+# Python's cache files (rebuilt automatically)
+__pycache__/
+
+# Our virtual environment (rebuild it with: pip install -r requirements.txt)
+.venv/
