@@ -58,7 +58,7 @@ def main():
                              false_alarm_rate=round(c["false_alarm"] / n_harmless, 3)))
         setattr(verifiers, constant, default)       # put it back for the next sweep
 
-    with open("sweep.csv", "w", newline="") as f:
+    with open("sweep.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=rows[0].keys())
         w.writeheader()
         w.writerows(rows)

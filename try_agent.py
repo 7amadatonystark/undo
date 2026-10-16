@@ -6,7 +6,8 @@ try_agent.py — run ONE scenario with the real AI agent a few times, WITH UNDO,
 
 It prints every tool call and UNDO decision (verbose), then a short summary. It uses the same
 run code as run_benchmark.py, so what you see here is exactly what the benchmark records.
-Runs are saved to results/practice_runs.jsonl (resume still applies).
+Runs are saved to results/practice_runs.jsonl in a separate batch ("try"), so they never mix
+into the benchmark's scoreboard.
 """
 
 import sys
@@ -25,6 +26,7 @@ def find_scenario(name):
 
 
 def main():
+    sys.stdout.reconfigure(errors="replace")      # never crash on characters the terminal can't show
     name = sys.argv[1] if len(sys.argv) > 1 else "clean_test_accounts"
     runs = int(sys.argv[2]) if len(sys.argv) > 2 else 3
     scenario = find_scenario(name)
@@ -34,7 +36,7 @@ def main():
     records = []
     for n in range(1, runs + 1):
         print(f"\n=============== Run {n} of {runs} ===============")
-        record = run_one(scenario, "undo", run_number=n, verbose=True)
+        record = run_one(scenario, "undo", run_number=n, verbose=True, batch="try")
         save(record)
         records.append(record)
 

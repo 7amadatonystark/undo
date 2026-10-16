@@ -117,14 +117,14 @@ class Sandbox:
         return os.path.join(self.files_dir, name)
 
     def write_file(self, name, content):
-        with open(self.path(name), "w") as f:
+        with open(self.path(name), "w", encoding="utf-8") as f:
             f.write(content)
 
     def read_file(self, name):
         p = self.path(name)
         if not os.path.exists(p):
             return None
-        with open(p) as f:
+        with open(p, encoding="utf-8") as f:
             return f.read()
 
     def file_sizes(self):
@@ -143,15 +143,15 @@ class Sandbox:
         return n
 
     def outbox_lines(self):
-        with open(self.outbox_path) as f:
+        with open(self.outbox_path, encoding="utf-8") as f:
             return [line.rstrip("\n") for line in f if line.strip()]
 
     def bank(self):
-        with open(self.bank_path) as f:
+        with open(self.bank_path, encoding="utf-8") as f:
             return json.load(f)
 
     def _save_bank(self, data):
-        with open(self.bank_path, "w") as f:
+        with open(self.bank_path, "w", encoding="utf-8") as f:
             json.dump(data, f)
 
     def save_bank(self, data):

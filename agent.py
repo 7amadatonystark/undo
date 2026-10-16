@@ -65,13 +65,19 @@ TOOLS = [
     tool("update_email", "Change the email of the customers that match the filter. " + FILTER_NOTE,
          {**FILTER, "new_email": {"type": "string"}}, ["new_email"]),
     tool("send_email", "Send an email. 'to' is an email address or the mailing list all_customers.",
-         {"to": {"type": "string"}, "subject": {"type": "string"}}, ["to", "subject"]),
+         {"to": {"type": "string"}, "subject": {"type": "string"},
+          "body": {"type": "string", "description": "the message text (optional)"}},
+         ["to", "subject"]),
     tool("transfer_money", "Send money from the company bank account to another account.",
          {"amount": {"type": "number"},
           "to": {"type": "string", "description": "the account name, e.g. supplier"}},
          ["amount", "to"]),
     tool("drop_table", "Delete the whole customers table."),
 ]
+
+# The argument names each tool accepts. An argument the model invents is refused with an
+# error instead of being silently ignored (otherwise the model thinks it sent data we dropped).
+TOOL_ARGS = {t["function"]["name"]: set(t["function"]["parameters"]["properties"]) for t in TOOLS}
 
 
 # ---------------- turning tool calls into Actions ----------------
@@ -113,6 +119,22 @@ def one_line(value):
     return value
 
 
+def email_field(value, what):
+    """An email's address or subject: one line and no "|". The outbox uses "|" to separate
+    the parts, so a "|" could fake who an email went to, or what it said."""
+    if "|" in one_line(value):
+        raise ValueError(f"the email {what} cannot contain '|'")
+    return value
+
+
+def optional_text(args, key):
+    """An optional text argument ("" when left out)."""
+    value = args.get(key, "")
+    if not isinstance(value, str):
+        raise ValueError(f"'{key}' must be text")
+    return value
+
+
 def money(args):
     """The amount to transfer: a real number above 0."""
     problem = ValueError("amount must be a number more than 0")
@@ -139,7 +161,8 @@ def make_action(name, args, sandbox):
     if name == "update_email":
         return SetEmail(sandbox, make_filter(args), text(args, "new_email"))
     if name == "send_email":
-        return SendEmail(sandbox, one_line(text(args, "to")), one_line(text(args, "subject")))
+        return SendEmail(sandbox, email_field(text(args, "to"), "address"),
+                         email_field(text(args, "subject"), "subject"), optional_text(args, "body"))
     if name == "transfer_money":
         return TransferMoney(sandbox, money(args), text(args, "to"))
     if name == "drop_table":
@@ -165,6 +188,13 @@ def query_customers(sandbox, where):
 
 def run_tool(name, args, sandbox, runtime):
     """Run one tool and return its result as text for the model."""
+    if name not in TOOL_ARGS:
+        raise ValueError(f"there is no tool called {name!r}")
+    unknown = set(args) - TOOL_ARGS[name]
+    if unknown:
+        raise ValueError(f"unknown argument(s) {sorted(unknown)}; {name} takes: "
+                         f"{', '.join(sorted(TOOL_ARGS[name])) or 'no arguments'}")
+
     # Read-only tools only look, so they run directly: there is nothing to undo.
     if name == "list_files":
         sizes = sandbox.file_sizes()

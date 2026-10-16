@@ -10,6 +10,7 @@ Each Action has:
 This is the Saga pattern: every step that can go wrong carries its own undo.
 """
 
+import json
 import os
 import shutil
 import uuid
@@ -214,22 +215,29 @@ class SetEmail(Action):
 # ---------------- COMPENSABLE ----------------
 
 class SendEmail(Action):
-    """You can't un-send an email. You CAN send a correction."""
+    """You can't un-send an email. You CAN send a correction.
+
+    The outbox stores one email per line: "TO:<to> | <subject>", plus " | <body>" when there
+    is a body. The body is saved as JSON text, so a multi-line message still fits on one line.
+    """
     kind = COMPENSABLE
 
-    def __init__(self, sandbox, to, subject):
+    def __init__(self, sandbox, to, subject, body=""):
         super().__init__(sandbox)
-        self.to, self.subject = to, subject
+        self.to, self.subject, self.body = to, subject, body
 
     def describe(self):
         return f"send email to '{self.to}': {self.subject}"
 
     def do(self):
-        with open(self.sb.outbox_path, "a") as f:
-            f.write(f"TO:{self.to} | {self.subject}\n")
+        line = f"TO:{self.to} | {self.subject}"
+        if self.body:
+            line += f" | {json.dumps(self.body, ensure_ascii=False)}"
+        with open(self.sb.outbox_path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
 
     def undo(self):
-        with open(self.sb.outbox_path, "a") as f:
+        with open(self.sb.outbox_path, "a", encoding="utf-8") as f:
             f.write(f"TO:{self.to} | CORRECTION: please ignore '{self.subject}'\n")
 
 

@@ -4,8 +4,9 @@ llm.py — the ONE door every AI model call in this project goes through.
 Why one door? So two jobs happen for every call, in one place:
   1. THROTTLE: at most 30 requests per minute. NVIDIA's free limit is about 40 per
      minute, shared by every model on our key, so we stay safely under it.
-  2. RETRY: if NVIDIA says "too many requests" (429) or has a server error (5xx),
-     wait and try again, waiting twice as long each time. At most 3 tries in total.
+  2. RETRY: if NVIDIA says "too many requests" (429), has a server error (5xx), or the
+     connection drops or times out, wait and try again, waiting twice as long each time.
+     At most 3 tries in total.
 
 Usage:
     from llm import chat
@@ -43,10 +44,17 @@ def wait_for_turn():
 
 
 def is_worth_retrying(error):
-    """429 (too many requests) and 5xx (server trouble) often fix themselves.
-    Other errors, like a wrong model name or a bad key, will fail again every time."""
+    """429 (too many requests), 5xx (server trouble) and a dropped or timed-out connection
+    often fix themselves. Other errors, like a wrong model name or a bad key, fail every time."""
+    if isinstance(error, openai.APIConnectionError):        # includes timeouts
+        return True
     return isinstance(error, openai.APIStatusError) and (
         error.status_code == 429 or error.status_code >= 500)
+
+
+def describe(error):
+    """A short name for the error, for the log (a connection error has no status code)."""
+    return str(error.status_code) if isinstance(error, openai.APIStatusError) else "connection"
 
 
 def backoff_seconds(attempt):
@@ -76,10 +84,10 @@ def chat(messages, tools=None, model=None, temperature=None):
         try:
             response = send_once(model, messages, tools, temperature)
             return response.choices[0].message
-        except openai.APIStatusError as error:
+        except (openai.APIStatusError, openai.APIConnectionError) as error:
             if not is_worth_retrying(error) or attempt == MAX_TRIES:
                 raise                   # give up: let the caller see the error
             wait = backoff_seconds(attempt)
-            print(f"[llm] error {error.status_code}; waiting {wait}s, "
+            print(f"[llm] error {describe(error)}; waiting {wait}s, "
                   f"then try {attempt + 1} of {MAX_TRIES}")
             time.sleep(wait)

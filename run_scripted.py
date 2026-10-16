@@ -173,7 +173,7 @@ def main():
     print(f"HUMAN APPROVALS ASKED: {approvals['ask_all']} if asking about every action, "
           f"{approvals['undo']} with UNDO")
 
-    with open("results.csv", "w", newline="") as f:
+    with open("results.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=rows[0].keys())
         w.writeheader()
         w.writerows(rows)
