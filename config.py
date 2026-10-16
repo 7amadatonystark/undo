@@ -32,3 +32,7 @@ def require(name):
 NVIDIA_API_KEY = require("NVIDIA_API_KEY")
 AGENT_MODEL = require("AGENT_MODEL")
 JUDGE_MODEL = os.getenv("JUDGE_MODEL", "").strip() or None    # optional until Step 3
+
+# How random the agent's choices are (0 = almost always the same answer). Some randomness
+# lets repeated runs differ like real use. It is the SAME in every run and saved with each run.
+AGENT_TEMPERATURE = 0.7

@@ -53,6 +53,10 @@ class Sandbox:
 
     # ---------- helpers the actions use ----------
     def path(self, name):
+        # Only plain file names like "notes.txt". An AI agent could otherwise ask
+        # for "../../secret.txt" and reach files outside the sandbox folder.
+        if not name or name != os.path.basename(name) or name in (".", ".."):
+            raise ValueError(f"not allowed: {name!r} (only plain file names, no folders)")
         return os.path.join(self.files_dir, name)
 
     def write_file(self, name, content):

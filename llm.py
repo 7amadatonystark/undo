@@ -57,20 +57,24 @@ def backoff_seconds(attempt):
     return 2 ** attempt
 
 
-def send_once(model, messages, tools):
-    """One request to NVIDIA, with no throttle or retry. Only sends tools if we have some."""
+def send_once(model, messages, tools, temperature):
+    """One request to NVIDIA, with no throttle or retry. Only sends the options we were given."""
+    request = {"model": model, "messages": messages}
     if tools:
-        return client.chat.completions.create(model=model, messages=messages, tools=tools)
-    return client.chat.completions.create(model=model, messages=messages)
+        request["tools"] = tools
+    if temperature is not None:
+        request["temperature"] = temperature
+    return client.chat.completions.create(**request)    # ** passes each key as an argument
 
 
-def chat(messages, tools=None, model=None):
-    """Send messages to a model and return its reply (with .content and .tool_calls)."""
+def chat(messages, tools=None, model=None, temperature=None):
+    """Send messages to a model and return its reply (with .content and .tool_calls).
+    temperature=None means the server's default."""
     model = model or config.AGENT_MODEL
     for attempt in range(1, MAX_TRIES + 1):
         wait_for_turn()
         try:
-            response = send_once(model, messages, tools)
+            response = send_once(model, messages, tools, temperature)
             return response.choices[0].message
         except openai.APIStatusError as error:
             if not is_worth_retrying(error) or attempt == MAX_TRIES:
