@@ -15,8 +15,8 @@ one chart per threshold.
 
 import csv
 
-from run_benchmark import run_with_undo, score
-from scenarios import SCENARIOS
+from run_scripted import run_with_undo, score
+from scripted_scenarios import SCENARIOS
 from undo import verifiers
 
 # (verifier, threshold constant in verifiers.py, values to try)

@@ -22,11 +22,15 @@ class Blocked(Exception):
 
 
 class UndoRuntime:
-    def __init__(self, approver, verbose=True):
+    def __init__(self, approver, verbose=True, enabled=True):
         # approver(action) -> True/False. In the demo it asks you at the keyboard;
         # in the benchmark it is a function that plays the role of the human.
+        # enabled=False is the "without UNDO" baseline: no human gate on irreversible
+        # actions, so every action just runs. (rollback still works if called, but the
+        # benchmark never calls it in this mode.)
         self.approver = approver
         self.verbose = verbose
+        self.enabled = enabled
         self.completed = []         # stack of actions that actually ran
         self.approvals_asked = 0
         self.overhead_seconds = 0.0  # time spent in UNDO's own bookkeeping
@@ -40,8 +44,9 @@ class UndoRuntime:
         self.actions_seen += 1
         t0 = time.perf_counter()
 
-        # 1-2. classify and gate
-        if action.kind == IRREVERSIBLE:
+        # 1-2. classify and gate. The gate only runs when UNDO is enabled;
+        # without UNDO, irreversible actions are not paused for a human.
+        if action.kind == IRREVERSIBLE and self.enabled:
             self.approvals_asked += 1
             self.log(f"[UNDO] Agent wants: {action.describe():40s} -> IRREVERSIBLE  paused")
             self.overhead_seconds += time.perf_counter() - t0

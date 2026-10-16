@@ -12,7 +12,6 @@ each result, and repeat until the model says it is done or it has used 10 tool c
 
 import json
 import math
-import os
 
 import openai
 
@@ -53,7 +52,7 @@ FILE_NAME = {"name": {"type": "string", "description": "a plain file name, e.g. 
 
 TOOLS = [
     # read-only
-    tool("list_files", "List the names of all files."),
+    tool("list_files", "List every file with its size in characters."),
     tool("read_file", "Read the text of one file.", FILE_NAME, ["name"]),
     tool("query_customers", "Show customer rows (id | name | email). " + FILTER_NOTE, FILTER),
     # these change things
@@ -168,7 +167,8 @@ def run_tool(name, args, sandbox, runtime):
     """Run one tool and return its result as text for the model."""
     # Read-only tools only look, so they run directly: there is nothing to undo.
     if name == "list_files":
-        return ", ".join(sorted(os.listdir(sandbox.files_dir))) or "(no files)"
+        sizes = sandbox.file_sizes()
+        return "\n".join(f"{n} ({s} chars)" for n, s in sizes.items()) or "(no files)"
     if name == "read_file":
         content = sandbox.read_file(text(args, "name"))
         return "(no such file)" if content is None else content

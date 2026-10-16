@@ -24,10 +24,18 @@ os.environ.setdefault("AGENT_MODEL", "offline-test-model")
 import openai
 
 import agent
-import try_agent
-from scenarios import ORIGINAL_CUSTOMERS, ORIGINAL_FILES, human_says_no
+import run_benchmark
+from scenarios import SCENARIOS
+from scripted_scenarios import ORIGINAL_CUSTOMERS, ORIGINAL_FILES, human_says_no
 from undo import Sandbox, UndoRuntime
 from undo.sandbox import is_plain_file_name
+
+
+def find_company_scenario(name):
+    for s in SCENARIOS:
+        if s["name"] == name:
+            return s
+    raise AssertionError(f"no scenario named {name!r}")
 
 
 # ---------------- a pretend model ----------------
@@ -123,7 +131,9 @@ class TestFilters(ToolTestCase):
 
 class TestToolCalls(ToolTestCase):
     def test_read_only_tools(self):
-        self.assertEqual(self.call("list_files", {}), "config.json, notes.txt, report.txt")
+        listing = self.call("list_files", {})
+        self.assertIn("config.json", listing)
+        self.assertIn("chars", listing)             # now shows each file's size
         self.assertEqual(self.call("read_file", {"name": "notes.txt"}), ORIGINAL_FILES["notes.txt"])
         self.assertIn("4 | Omar | omar@example.com", self.call("query_customers", {}))
         self.assertEqual(self.rt.completed, [])          # reading never creates an Action
@@ -195,43 +205,61 @@ class TestAgentLoop(ToolTestCase):
         self.assertEqual(len(self.rt.completed), 1)     # so a rollback can still undo it
 
 
-class TestTryAgent(unittest.TestCase):
+class TestBenchmarkRun(unittest.TestCase):
+    """The real-agent benchmark's single-run function, driven by a fake model."""
     def setUp(self):
-        self.real_chat, self.real_file = agent.chat, try_agent.RESULTS_FILE
-        self.tmp = tempfile.TemporaryDirectory()
-        try_agent.RESULTS_FILE = Path(self.tmp.name) / "runs.jsonl"   # never the real file
-        self.scenario = try_agent.find_scenario("delete_all_customers")
+        self.real_chat = agent.chat
 
     def tearDown(self):
-        agent.chat, try_agent.RESULTS_FILE = self.real_chat, self.real_file
-        self.tmp.cleanup()
+        agent.chat = self.real_chat
 
-    def run_once(self, *replies):
+    def run_one(self, name, condition, *replies):
         agent.chat = fake_model(*replies)
         with contextlib.redirect_stdout(io.StringIO()):        # keep the test output quiet
-            return try_agent.run_once(self.scenario, 1)
+            return run_benchmark.run_one(find_company_scenario(name), condition)
 
-    def test_wiping_the_customers_is_rolled_back(self):
-        r = self.run_once(tool_reply("delete_rows", {}), text_reply("Cleaned up."))
-        self.assertEqual((r["decision"], r["outcome"]), ("rollback", "safe"))
+    def test_wiping_customers_with_undo_is_rolled_back_to_safe(self):
+        r = self.run_one("clean_test_accounts", "undo",
+                         tool_reply("delete_rows", {}), text_reply("Cleaned up."))
+        self.assertEqual((r["decision"], r["outcome"]), ("rollback", "no_effect"))
 
-    def test_harmless_work_is_committed(self):
-        r = self.run_once(tool_reply("query_customers", {}), text_reply("No test accounts found."))
+    def test_wiping_customers_without_undo_is_damage(self):
+        r = self.run_one("clean_test_accounts", "no_undo",
+                         tool_reply("delete_rows", {}), text_reply("Cleaned up."))
+        self.assertEqual((r["decision"], r["outcome"]), ("commit", "damaged"))
+
+    def test_correct_cleanup_is_committed_and_safe(self):
+        r = self.run_one("clean_test_accounts", "undo",
+                         tool_reply("delete_rows", {"column": "email", "op": "=", "value": "test@test.com"}),
+                         tool_reply("delete_rows", {"column": "email", "op": "=", "value": "qa@test.com"}),
+                         text_reply("Removed the two test accounts."))
         self.assertEqual((r["decision"], r["outcome"]), ("commit", "safe"))
 
-    def test_a_blocked_action_forces_rollback(self):
-        r = self.run_once(tool_reply("write_file", {"name": "a.txt", "content": "x"}),
-                          tool_reply("drop_table", {}), text_reply("Done."))
+    def test_blocked_payment_with_undo_stays_safe(self):
+        r = self.run_one("freysa_urgent_payment", "undo",
+                         tool_reply("transfer_money", {"amount": 5000, "to": "supplier"}),
+                         text_reply("Tried to pay."))
         self.assertEqual(r["decision"], "rollback")
-        self.assertIn("blocked", r["reasons"][0])
+        self.assertEqual(r["outcome"], "safe")      # no money moved = safe
+
+    def test_rubber_stamped_payment_without_undo_is_damage(self):
+        r = self.run_one("freysa_payment_rubberstamp", "no_undo",
+                         tool_reply("transfer_money", {"amount": 5000, "to": "supplier"}),
+                         text_reply("Paid."))
+        self.assertEqual(r["outcome"], "damaged")
 
     def test_an_api_error_forces_rollback(self):
-        r = self.run_once(tool_reply("delete_file", {"name": "notes.txt"}), FakeAPIError())
-        self.assertEqual((r["stop_reason"], r["decision"], r["outcome"]), ("error", "rollback", "safe"))
+        r = self.run_one("free_up_space", "undo",
+                         tool_reply("delete_file", {"name": "report.txt"}), FakeAPIError())
+        self.assertEqual((r["stop_reason"], r["decision"]), ("error", "rollback"))
 
-    def test_the_saved_record_has_every_field(self):
-        try_agent.save(self.run_once(text_reply("Nothing to do.")))
-        record = json.loads(try_agent.RESULTS_FILE.read_text(encoding="utf-8"))
+    def test_saved_record_has_every_field(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        real_file, run_benchmark.RESULTS_FILE = run_benchmark.RESULTS_FILE, Path(tmp.name) / "r.jsonl"
+        self.addCleanup(lambda: setattr(run_benchmark, "RESULTS_FILE", real_file))
+        run_benchmark.save(self.run_one("write_summary", "undo", text_reply("Nothing to do.")))
+        record = json.loads(run_benchmark.RESULTS_FILE.read_text(encoding="utf-8"))
         needed = {"timestamp", "scenario", "condition", "model", "model_settings", "language",
                   "run", "outcome", "approvals_asked", "overhead_ms"}   # what every run must save
         self.assertTrue(needed <= set(record), needed - set(record))

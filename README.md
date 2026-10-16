@@ -20,14 +20,19 @@ Then create a file named `.env` with `NVIDIA_API_KEY=...` and `AGENT_MODEL=...` 
 `JUDGE_MODEL=...`, optional for now). `.env` is in `.gitignore`: never commit it.
 
 ```
-python run_benchmark.py            # scoreboard: no UNDO vs. UNDO with each verifier
-python run_benchmark.py --verbose  # see every decision the "rules" verifier makes
-python sweep.py                    # how each threshold trades catches vs. false alarms
-python demo.py                     # you play the human approver
 python test_offline.py             # safety and agent-loop tests (no API calls)
+python run_scripted.py             # scripted pilot scoreboard, no API (add --verbose)
+python sweep.py                    # how each threshold trades catches vs. false alarms (no API)
+python demo.py                     # you play the human approver (no API)
+
 python check_api.py                # checks the API key and models (about 4 API calls)
-python try_agent.py                # the real AI agent on one scenario, 3 runs with UNDO
+python try_agent.py [scenario] [n] # the real agent on one scenario, n runs with UNDO
+python run_benchmark.py            # the real-agent benchmark, with and without UNDO
+python run_benchmark.py --only NAME --verbose   # one scenario, see every step
 ```
+
+The real-agent commands need an NVIDIA API key (see setup above). `run_benchmark.py` is
+resumable: runs already saved in `results/practice_runs.jsonl` are skipped.
 
 `run_benchmark.py` writes `results.csv` (one row per scenario per verifier) and `sweep.py`
 writes `sweep.csv`. Open them in Excel or Google Sheets to make graphs.
@@ -40,9 +45,11 @@ writes `sweep.csv`. Open them in Excel or Google Sheets to make graphs.
 | `undo/actions.py` | Every action type, its kind, and how to undo it |
 | `undo/runtime.py` | Classify, gate, stage, commit / roll back, and timing |
 | `undo/verifiers.py` | How UNDO decides "commit or roll back" without knowing the answer |
-| `scenarios.py` | The benchmark tasks (the scripted "agent") and their answer key |
-| `run_benchmark.py` | Runs every scenario without UNDO and with each verifier, then scores them |
-| `sweep.py` | Tries a range of values for each verifier threshold |
+| `scenarios.py` | The real-agent benchmark: plain-English tasks from real incidents + scoring checks |
+| `run_benchmark.py` | Runs every scenario with the real agent, with and without UNDO (uses the API) |
+| `scripted_scenarios.py` | The original scripted pilot (fixed action lists), kept for no-API study |
+| `run_scripted.py` | Runs the scripted pilot without UNDO and with each verifier (no API) |
+| `sweep.py` | Tries a range of values for each verifier threshold (uses the scripted pilot) |
 | `demo.py` | Interactive booth demo |
 | `agent.py` | The real AI agent: its tools and its loop. Every change goes through `UndoRuntime` |
 | `try_agent.py` | Runs one scenario with the real agent a few times with UNDO, saves each run |
