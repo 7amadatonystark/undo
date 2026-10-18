@@ -13,6 +13,7 @@ This is the Saga pattern: every step that can go wrong carries its own undo.
 import json
 import os
 import shutil
+import sqlite3
 import uuid
 
 REVERSIBLE = "REVERSIBLE"        # a real inverse exists (restore the old file)
@@ -86,7 +87,9 @@ class WriteFile(Action):
 
     def undo(self):
         if self.old_content is None:
-            os.remove(self.sb.path(self.name))          # file didn't exist before
+            p = self.sb.path(self.name)
+            if os.path.exists(p):                       # file didn't exist before; remove it
+                os.remove(p)                            # (guarded so recovery can run twice)
         else:
             self.sb.write_file(self.name, self.old_content)
 
@@ -155,24 +158,31 @@ class AddCustomer(Action):
     def __init__(self, sandbox, name, email):
         super().__init__(sandbox)
         self.name, self.email = name, email
-        self.new_id = None
+        self.before_max_id = 0
 
     def describe(self):
         return f"add customer '{self.name}'"
 
+    def prepare(self):
+        # The highest id BEFORE we insert. Undo removes the matching row(s) added after this,
+        # so recovery works even if a crash lost the new row's id. (Captured in prepare so it is
+        # written to the journal before do() runs.)
+        con = self.sb.db()
+        self.before_max_id = con.execute("SELECT MAX(id) FROM customers").fetchone()[0] or 0
+        con.close()
+
     def do(self):
         con = self.sb.db()
-        cur = con.execute("INSERT INTO customers (name, email) VALUES (?, ?)",
-                          (self.name, self.email))
-        self.new_id = cur.lastrowid
+        con.execute("INSERT INTO customers (name, email) VALUES (?, ?)", (self.name, self.email))
         con.commit()
         con.close()
 
     def undo(self):
-        if self.new_id is None:
-            return                                      # do() crashed before inserting
+        # Delete the row(s) this action added: newer than before_max_id, with our name+email.
+        # Safe to run twice (the second time matches nothing) and after a crash mid-insert.
         con = self.sb.db()
-        con.execute("DELETE FROM customers WHERE id = ?", (self.new_id,))
+        con.execute("DELETE FROM customers WHERE id > ? AND name = ? AND email = ?",
+                    (self.before_max_id, self.name, self.email))
         con.commit()
         con.close()
 
@@ -214,17 +224,51 @@ class SetEmail(Action):
 
 # ---------------- COMPENSABLE ----------------
 
+COMPANY_DOMAIN = "@company.example"     # the company's own email addresses
+
+
 class SendEmail(Action):
-    """You can't un-send an email. You CAN send a correction.
+    """You can't un-send an email. You CAN send a correction, but only to people we know.
+
+    Its kind depends on WHO it goes to (Step 4 finding):
+      - a mailing-list name (no "@", e.g. all_customers or team), a company address, or a
+        customer already in the database -> COMPENSABLE: a correction reaches the same people
+      - any other address -> IRREVERSIBLE: data sent outside the company cannot be taken back
+        (a correction email does not un-leak it), so a human must approve it first
 
     The outbox stores one email per line: "TO:<to> | <subject>", plus " | <body>" when there
     is a body. The body is saved as JSON text, so a multi-line message still fits on one line.
     """
-    kind = COMPENSABLE
 
     def __init__(self, sandbox, to, subject, body=""):
         super().__init__(sandbox)
         self.to, self.subject, self.body = to, subject, body
+        self._kind = None           # decided the first time UNDO asks, see `kind` below
+
+    @property
+    def kind(self):
+        # Decided when the runtime first classifies the email (just before the gate), not when
+        # the action is written, so a customer the task added a moment ago counts as known.
+        # Then kept, so the email can't change kind halfway through (e.g. during a rollback).
+        # On the safe side: a customer DELETED earlier in the same task no longer counts as
+        # known, so emailing them asks a human.
+        if self._kind is None:
+            self._kind = COMPENSABLE if self.goes_to_known_people() else IRREVERSIBLE
+        return self._kind
+
+    def goes_to_known_people(self):
+        to = self.to.strip().lower()
+        if "@" not in to or to.endswith(COMPANY_DOMAIN):
+            return True                                 # a list name, or our own company
+        con = self.sb.db()
+        try:
+            found = con.execute("SELECT 1 FROM customers WHERE lower(email) = ?",
+                                (to,)).fetchone()
+        except sqlite3.OperationalError:                # the customers table was dropped
+            found = None
+        finally:
+            con.close()
+        return found is not None
 
     def describe(self):
         return f"send email to '{self.to}': {self.subject}"
@@ -294,3 +338,30 @@ class DropTable(Action):
 
     def undo(self):
         raise RuntimeError("Irreversible action cannot be undone")
+
+
+# ---------------- saving an action to the journal and back (Step 7) ----------------
+# Crash recovery needs to rebuild an action in a FRESH process to call its undo(). Every action
+# keeps its undo info in plain fields (old_content, trash_copy, saved_rows, old_emails,
+# before_max_id), all JSON-friendly, so we can store the field values and restore them later.
+
+ACTION_TYPES = {cls.__name__: cls for cls in
+                (WriteFile, DeleteFile, DeleteRows, AddCustomer, SetEmail, SendEmail,
+                 TransferMoney, DropTable)}
+
+
+def to_journal(action):
+    """An action -> a plain dict {type, kind, state} safe to write as JSON. `state` is every
+    field except the sandbox (which the recovering process supplies)."""
+    state = {key: value for key, value in vars(action).items() if key != "sb"}
+    return {"type": type(action).__name__, "kind": action.kind, "state": state}
+
+
+def from_journal(sandbox, record):
+    """Rebuild the action a to_journal() record describes, attached to `sandbox`. __new__ skips
+    __init__, so a DeleteFile keeps its ORIGINAL trash path instead of making a new one."""
+    cls = ACTION_TYPES[record["type"]]
+    action = cls.__new__(cls)
+    action.sb = sandbox
+    action.__dict__.update(record["state"])
+    return action

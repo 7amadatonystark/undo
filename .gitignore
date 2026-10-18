@@ -6,3 +6,5 @@ __pycache__/
 
 # Our virtual environment (rebuild it with: pip install -r requirements.txt)
 .venv/
+results/runs.lock
+study_practice.csv

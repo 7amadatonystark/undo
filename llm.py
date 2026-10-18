@@ -6,7 +6,8 @@ Why one door? So two jobs happen for every call, in one place:
      minute, shared by every model on our key, so we stay safely under it.
   2. RETRY: if NVIDIA says "too many requests" (429), has a server error (5xx), or the
      connection drops or times out, wait and try again, waiting twice as long each time.
-     At most 3 tries in total.
+     "Too many requests" waits much longer (30 s, then 60 s): NVIDIA throttles a busy model
+     for a while, and short waits just failed all 3 tries. At most 3 tries in total.
 
 Usage:
     from llm import chat
@@ -57,11 +58,18 @@ def describe(error):
     return str(error.status_code) if isinstance(error, openai.APIStatusError) else "connection"
 
 
-def backoff_seconds(attempt):
+RATE_LIMIT_WAIT = 30         # seconds before the first retry after a 429
+
+
+def backoff_seconds(attempt, rate_limited=False):
     """How many seconds to wait after failed try number `attempt` (1, 2, ...)."""
     # Exponential backoff: the wait DOUBLES after every failed try (2 s, 4 s, 8 s ...).
     # If an overloaded server gets instant retries from every program, it stays
     # overloaded. Waiting longer each time gives it room to recover.
+    # A 429 means "you are being throttled": 2-4 s was far too short in the final run, so
+    # it starts at RATE_LIMIT_WAIT instead (30 s, 60 s).
+    if rate_limited:
+        return RATE_LIMIT_WAIT * 2 ** (attempt - 1)
     return 2 ** attempt
 
 
@@ -87,7 +95,8 @@ def chat(messages, tools=None, model=None, temperature=None):
         except (openai.APIStatusError, openai.APIConnectionError) as error:
             if not is_worth_retrying(error) or attempt == MAX_TRIES:
                 raise                   # give up: let the caller see the error
-            wait = backoff_seconds(attempt)
+            rate_limited = isinstance(error, openai.APIStatusError) and error.status_code == 429
+            wait = backoff_seconds(attempt, rate_limited)
             print(f"[llm] error {describe(error)}; waiting {wait}s, "
                   f"then try {attempt + 1} of {MAX_TRIES}")
             time.sleep(wait)

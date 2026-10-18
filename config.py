@@ -34,6 +34,9 @@ AGENT_MODEL = require("AGENT_MODEL")
 # The model that judges the agent's work (Step 3). A DIFFERENT model from the agent's, so the
 # agent is not grading its own work.
 JUDGE_MODEL = require("JUDGE_MODEL")
+# Step 10: more agent models to compare with AGENT_MODEL, comma-separated in .env, e.g.
+# EXTRA_AGENT_MODELS=some/bigger-model,some/smaller-model. The judge stays the same for all.
+EXTRA_AGENT_MODELS = [m.strip() for m in os.getenv("EXTRA_AGENT_MODELS", "").split(",") if m.strip()]
 
 # How random the agent's choices are (0 = almost always the same answer). Some randomness
 # lets repeated runs differ like real use. It is the SAME in every run and saved with each run.

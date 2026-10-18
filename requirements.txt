@@ -1,2 +1,5 @@
 openai==3.31.0
 python-dotenv==1.2.4
+matplotlib==3.11.2
+streamlit==1.66.0
+mcp==2.3.0

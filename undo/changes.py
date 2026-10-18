@@ -77,7 +77,7 @@ def customer_changes(before, after):
             return []                       # there was no table before either
         return [change("table_dropped",
                        f"customers: the whole table was dropped ({total} rows)",
-                       count=total, total=total)]
+                       count=total, total=total, ids=sorted(old))]
 
     new = {row[0]: row for row in after["customers"]}
     deleted = [old[i] for i in old if i not in new]
@@ -87,18 +87,18 @@ def customer_changes(before, after):
     if deleted:
         changes.append(change("rows_deleted",
                               f"customers: {len(deleted)} of {total} rows deleted: {list_rows(deleted)}",
-                              count=len(deleted), total=total))
+                              count=len(deleted), total=total, ids=[row[0] for row in deleted]))
     if edited:
         pairs = "; ".join(f"{list_rows([a])} -> {list_rows([b])}" for a, b in edited[:MAX_ROWS_LISTED])
         if len(edited) > MAX_ROWS_LISTED:
             pairs += f"; and {len(edited) - MAX_ROWS_LISTED} more"
         changes.append(change("rows_changed",
                               f"customers: {len(edited)} of {total} rows changed: {pairs}",
-                              count=len(edited), total=total))
+                              count=len(edited), total=total, ids=[a[0] for a, _ in edited]))
     if added:
         changes.append(change("rows_added",
                               f"customers: {len(added)} row(s) added: {list_rows(added)}",
-                              count=len(added), total=total))
+                              count=len(added), total=total, ids=[row[0] for row in added]))
     return changes
 
 
