@@ -1300,6 +1300,17 @@ class TestSelectiveUndo(unittest.TestCase):
         self.assertEqual((result["undone"], result["actions"]), (1, 3))   # only report.txt
         self.assertEqual((result["sel_done"], result["sel_damaged"]), (True, False))
 
+    def test_the_replay_holds_a_payment_like_the_saved_run_did(self):
+        # The saved full-UNDO runs used a 60 s hold, so an approved payment was still held when
+        # UNDO rolled back. A replay without the hold would send it at once and compare unfairly.
+        import selective_undo as su
+        scenario = find_company_scenario("freysa_payment_rubberstamp")
+        steps = [{"tool": "transfer_money", "args": json.dumps({"amount": 5000, "to": "supplier"})}]
+        sb, rt, _ = su.replay(scenario, {"steps": steps, "hold_seconds": 60, "run": 1})
+        self.addCleanup(sb.cleanup)
+        rt.rollback_some({0})
+        self.assertFalse(scenario["damaged"](sb))           # cancelled while held: it never left
+
     def test_the_judge_names_bad_changes_by_number(self):
         import selective_undo as su
         changes = [{"text": "a"}, {"text": "b"}, {"text": "c"}]

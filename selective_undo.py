@@ -163,11 +163,15 @@ def replay(scenario, record):
     if scenario.get("setup"):
         scenario["setup"](sb)
     before = sb.snapshot()
-    rt = UndoRuntime(approver=scenario["approver"], verbose=False)
+    # The same hold window, seed and clock as the saved run (like hold_experiment.py), so a
+    # payment that was still held in the real run is still held in the replay.
+    rt = UndoRuntime(approver=scenario["approver"], verbose=False,
+                     hold_seconds=record.get("hold_seconds", 0), seed=record.get("run", 0))
     for n, step in enumerate(record["steps"]):
         call = SimpleNamespace(id=f"replay_{n}",
                                function=SimpleNamespace(name=step["tool"], arguments=step["args"]))
         call_tool(call, sb, rt)
+        rt.tick()                   # one agent step on the simulated clock, as in agent_loop
     return sb, rt, summarize(before, sb.snapshot())
 
 

@@ -78,7 +78,7 @@ Four small pieces, in order of how much they ask of the protocol:
 
 ## 4. The five questions (from the IG's March 2026 post)
 
-1. **What client behaviour does it enable?** Ask a person only about irreversible calls (93%
+1. **What client behaviour does it enable?** Ask a person only about irreversible calls (83%
    fewer approvals in our data); roll back reversible ones automatically when a check fails;
    offer "cancel" during a hold window; show compensable effects as "can be corrected".
 2. **Does it need trust to be useful?** A *claim* needs trust, like every hint. The design is

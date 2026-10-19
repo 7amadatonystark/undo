@@ -297,7 +297,11 @@ only in the no-UNDO and full-UNDO runs, where the honesty results come from.
 - **Selective undo (Step 13)**: every action records what it touched; an action depends on an
   earlier one if it touched something that one changed. The verifier names the bad change, and
   only the responsible actions and their dependents are undone. `selective_undo.py` replays
-  saved runs (the tools are deterministic) to compare with full rollback.
+  saved runs (the tools are deterministic) to compare with full rollback. On the 47 full-UNDO
+  runs of the final data that were rolled back, it made no difference: every action was either
+  blamed or depended on a blamed one (86 of 86 undone), so both ways kept 0 of 14 tasks' work
+  and left no damage. The tasks are short, so there was rarely good work to keep apart from
+  the bad.
 - **Booth demo (Step 14)**: `streamlit run app.py`. A live, coloured feed of the agent's
   actions, Approve/Block for irreversible ones, before/now panels, Keep / Roll back, a "poisoned
   email" button, and the graphs.
