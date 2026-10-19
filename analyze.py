@@ -368,7 +368,7 @@ def models_report():
             "The same scenarios on other agent models, with the same judge. Does UNDO help "
             "every model, and are some models more destructive on their own?")
     models = [config.AGENT_MODEL] + config.EXTRA_AGENT_MODELS
-    run_models.scoreboard(list(run_models.model_records(config.EXTRA_AGENT_MODELS).values()), models)
+    run_models.scoreboard(run_models.comparison(config.EXTRA_AGENT_MODELS), models)
 
 
 def language_report(records):

@@ -1735,6 +1735,21 @@ class TestModels(unittest.TestCase):
         extra = [{"model": "m", "scenario": first, "condition": "undo", "run": n} for n in (3, 1, 2)]
         self.assertEqual([r["run"] for r in run_models.first_runs(extra, 1)], [1])
 
+    def test_the_main_model_is_compared_on_the_same_tasks(self):
+        # The sealed test set and the pairs were only run on the main model; counting them
+        # would compare the models on different tasks.
+        import run_models
+        from heldout_scenarios import HELDOUT_SCENARIOS
+        bench = {s["name"] for s in run_models.all_scenarios()}
+        fake = {("a", s["name"], "undo", 1): {"model": "main", "scenario": s["name"], "condition": "undo",
+                                              "run": 1, "language": "en"}
+                for s in run_models.all_scenarios()[:2] + HELDOUT_SCENARIOS[:2]}
+        with mock.patch.object(run_models, "final_records", lambda: fake), \
+                mock.patch.object(run_models, "FINAL_FILE", Path("no_such_file.jsonl")):
+            used = {r["scenario"] for r in run_models.model_records(["x"]).values()}
+        self.assertEqual(len(used), 2)
+        self.assertTrue(used <= bench)
+
 
 class TestDemoApp(unittest.TestCase):
     """Step 14: the booth demo, clicked through with Streamlit's test tool and a fake agent."""

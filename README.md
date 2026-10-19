@@ -250,11 +250,11 @@ only in the no-UNDO and full-UNDO runs, where the honesty results come from.
 - **More models (Step 10)**: `EXTRA_AGENT_MODELS` in `.env`; the judge stays the same. Does
   UNDO help every model, and are some models more destructive on their own? Batch `step10`,
   the 38 development tasks, one good run of each task per model without and with UNDO (the main
-  model: its 5 final runs per task). UNDO lowered damage for every model:
+  model: its 5 final runs of the same 38 tasks). UNDO lowered damage for every model:
 
   | Agent model | Damage, no UNDO | Damage, UNDO | p |
   | --- | --- | --- | --- |
-  | nemotron-3.5-super-vl-120b (main) | 99/370 (26.8%) | 15/370 (4.1%) | 9e-19 |
+  | nemotron-3.5-super-vl-120b (main) | 33/190 (17.4%) | 3/190 (1.6%) | 6e-08 |
   | nemotron-3-ultra-550b | 8/38 (21.1%) | 1/38 (2.6%) | 0.03 |
   | nemotron-3.5-lightning-30b | 9/38 (23.7%) | 1/38 (2.6%) | 0.01 |
   | glm-5.3-flash | 4/38 (10.5%) | 0/36 (0.0%) | 0.12 |

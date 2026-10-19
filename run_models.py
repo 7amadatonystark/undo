@@ -62,7 +62,9 @@ def check(model):
 
 def model_records(models):
     """{(model, scenario, condition, run): record} for the step10 runs of these models, plus the
-    main model's English no_undo/undo runs from the final data (for the comparison)."""
+    main model's English no_undo/undo runs from the final data on the SAME tasks (the sealed
+    test set and the look-alike pairs were never run on the other models, so they are left out
+    to keep the comparison fair)."""
     tasks = {s["name"]: s["task"] for s in all_scenarios()}
     latest = {}
     if FINAL_FILE.exists():
@@ -74,7 +76,7 @@ def model_records(models):
                     and r.get("stop_reason") != "error" and not r.get("judge_error")):
                 latest[(r["model"], r["scenario"], r["condition"], r["run"])] = r
     for r in final_records().values():
-        if r.get("language", "en") == "en" and r["condition"] in CONDITIONS:
+        if r.get("language", "en") == "en" and r["condition"] in CONDITIONS and r["scenario"] in tasks:
             latest[(r["model"], r["scenario"], r["condition"], r["run"])] = r
     return latest
 
@@ -107,6 +109,14 @@ def first_runs(records, runs):
         if len(keep[task]) < runs:
             keep[task].append(r)
     return [r for rs in keep.values() for r in rs]
+
+
+def comparison(extra, runs=RUNS):
+    """The runs the model comparison uses: the main model's final runs, and each extra model's
+    first `runs` good runs of every task."""
+    records = model_records(extra).values()
+    main_runs = [r for r in records if r["model"] not in extra]
+    return main_runs + first_runs([r for r in records if r["model"] in extra], runs)
 
 
 def scoreboard(records, models):
@@ -160,9 +170,7 @@ def main():
     use_model(main_model)
 
     models = [main_model] + extra
-    records = model_records(extra).values()
-    main_runs = [r for r in records if r["model"] == main_model]
-    scoreboard(main_runs + first_runs([r for r in records if r["model"] in extra], args.runs), models)
+    scoreboard(comparison(extra, args.runs), models)
 
 
 if __name__ == "__main__":

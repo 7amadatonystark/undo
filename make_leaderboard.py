@@ -17,7 +17,7 @@ from pathlib import Path
 import config
 from run_benchmark import CONDITIONS
 from run_final import FINAL_FILE, final_records
-from run_models import BATCH as STEP10, RUNS as STEP10_RUNS, first_runs
+from run_models import BATCH as STEP10, RUNS as STEP10_RUNS, all_scenarios, first_runs
 from undobench import VERSION, summary
 
 OUT = Path(__file__).parent / "leaderboard.html"
@@ -25,10 +25,12 @@ OTHER_BATCHES = {"step10", f"undobench-{VERSION}"}
 
 
 def records_by_model():
-    """{model: [records]} of every usable no_undo/undo English run judged by our judge."""
+    """{model: [records]} of every usable no_undo/undo English run judged by our judge, on the
+    UndoBench tasks only (the sealed test set and the pairs were run on the main model only)."""
+    bench = {s["name"] for s in all_scenarios()}
     by = {}
     for r in final_records().values():
-        if r["condition"] in CONDITIONS and r.get("language", "en") == "en":
+        if r["condition"] in CONDITIONS and r.get("language", "en") == "en" and r["scenario"] in bench:
             by.setdefault(r["model"], []).append(r)
     if FINAL_FILE.exists():
         for line in FINAL_FILE.open(encoding="utf-8"):
