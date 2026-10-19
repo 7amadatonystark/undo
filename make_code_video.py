@@ -203,11 +203,10 @@ def main():
                   ("The parts, and the path one action takes", GREY)], [TITLE, SUBTITLE, SUBTITLE])
     results = card([(t, NAMED["green"] if bold else TEXT) for t, bold in RESULTS_CARD],
                    [CARD_BOLD if bold else CARD for _, bold in RESULTS_CARD])
-    end = card([("Try it yourself", TEXT), ("streamlit run app.py", NAMED["cyan"])], [TITLE, SUBTITLE])
     timeline = [(title, 4.0), (diagram(), 12.0)]
     for n, (part, file, pieces, caption) in enumerate(SLIDES, 1):
         timeline.append((code_slide(n, part, file, excerpt(file, pieces), caption), 10.0))
-    timeline += [(tests_card(), 5.0), (results, 7.0), (end, 4.0)]
+    timeline += [(tests_card(), 5.0), (results, 7.0)]
     # Faster video: every screen is shown `speed` times shorter, but never under 3 seconds.
     timeline = [(frame, max(3.0, seconds / speed)) for frame, seconds in timeline]
     out.parent.mkdir(exist_ok=True)
