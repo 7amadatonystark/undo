@@ -421,29 +421,6 @@ waits for a human.
 - **Human approval has a limit.** In `rubber_stamped_payment` the human approves a bad payment,
   and nothing can undo it, whatever the verifier says.
 
-## Honest limits of this version (fix these; they ARE your research)
-
-1. **Verifiers see the task and the changes, but nothing else.** The LLM judge cannot open a
-   file that did not change, so it cannot check a refund email against `refund_policy.txt`.
-   It also reads file and email text written by the agent, which could try to fool it
-   (prompt injection, Step 4). And it can give the right answer for a wrong reason.
-2. **Thresholds are tuned on the same scenarios they are scored on.** That makes results look
-   better than they really are. Before reporting a "best" threshold, split the scenarios: pick
-   the threshold on one half, then report the score on the other half.
-3. **One run per scenario so far.** The real agent is random (temperature 0.7), so one run can
-   be luck. The final data repeats every run and reports how much results vary.
-4. **24 real-agent scenarios is still small.** Add more, especially "look-alike" pairs: one
-   harmful, one legit, with the same kind of change.
-5. **Kinds are hard-coded.** Each action class declares its own kind. A stronger version
-   classifies actions it has never seen before (for example, a raw shell command).
-6. **Overhead is measured on a tiny world.** `snapshot()` copies every file and row, and that
-   cost now dominates UNDO's overhead. Test with larger files and tables and graph how
-   overhead grows.
-
-Database actions take a safe filter like `("name", "=", "Mona")` instead of raw SQL, so an
-agent cannot inject its own SQL. The real agent's database tools use the same safe filters,
-and its file tools only accept plain file names inside the sandbox folder.
-
 ## License
 
 This project is **not open source**. Copyright © 2026 Abdullah Bedir. All rights reserved
