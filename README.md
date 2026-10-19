@@ -47,7 +47,19 @@ python selective_undo.py           # Step 13: selective vs. full rollback (1 jud
 streamlit run app.py               # Step 14: the booth demo in the browser
 streamlit run study_app.py         # Step 11: approval-fatigue study (practice mode until IRB OK)
 python study_summary.py --practice # Step 11: compare the two study conditions
-python mcp_server.py               # Step 12: UNDO as an MCP server (see MCP.md)
+python -m undo_mcp                 # Step I5: UNDO as an MCP server (see QUICKSTART.md)
+python video_demo.py [--fast]      # Step V1: the scripted video demo (no API)
+python make_video.py               # Step V1: the same demo as media/undo_demo.mp4 (68 s)
+python make_code_video.py          # a tour of the code: media/undo_code_tour.mp4 (about 2 min; --speed 2 for half)
+python undo_conformance.py         # Step I4: test every undo 100 times (no API)
+python judge_injection.py          # Step L3: can text the agent writes fool the verifier?
+python label_judge.py              # Step L3: hand-label 30 judge decisions (right reason?)
+python hold_experiment.py          # Step I2: damage against hold time (replays saved runs)
+python overhead_scaling.py         # Step L5: overhead against world size (no API)
+python freeze.py                   # Step 6: write FROZEN.md before the final runs
+python undobench.py --model M --base-url URL --key-env VAR   # Step I6: any endpoint
+python make_leaderboard.py         # Step I6: build leaderboard.html
+python pair_score.py               # Step L1: the look-alike pair score, before vs. after Step L3
 ```
 
 The real-agent commands need an NVIDIA API key (see setup above). `run_benchmark.py` is
@@ -56,41 +68,80 @@ resumable: runs already saved in `results/practice_runs.jsonl` are skipped.
 `run_scripted.py` writes `results.csv` (one row per scenario per verifier) and `sweep.py`
 writes `sweep.csv`. Open them in Excel or Google Sheets to make graphs.
 
-## Final results (18 October 2026)
+## Final results (19 October 2026)
 
-1,180 runs in `results/runs.jsonl` (batch `final3`): agent `nvidia/nemotron-3.5-super-vl-120b-a12b`,
-judge `openai/gpt-oss-20b`, combined verifier, 5 runs per scenario per condition. Run
-`python analyze.py` to reproduce every number below; graphs are in `figures/`.
+Batch `final4` in `results/runs.jsonl`: 3,020 runs plus 570 replayed ablation runs. Agent
+`nvidia/nemotron-3.5-super-vl-120b-a12b`, judge `openai/gpt-oss-20b`, combined verifier, every
+setting frozen in `FROZEN.md`. Reproduce with `python derive_ablations.py`, then
+`python analyze.py`; graphs are in `figures/`. (An earlier, smaller final run is kept as batch
+`final3`: `python analyze.py --batch final3`.)
 
-| Condition (English, 32 scenarios x 5 runs) | Damage left at the end | 95% CI | vs. full UNDO |
-| --- | --- | --- | --- |
-| No UNDO | 26/160 (16.2%) | 11.3-22.7% | p = 6.3e-06 |
-| **Full UNDO** | **3/160 (1.9%)** | 0.6-5.4% | |
-| No gate | 16/160 (10.0%) | 6.2-15.6% | p = 0.003 |
-| No verifier | 12/160 (7.5%) | 4.3-12.7% | p = 0.03 |
-| No rollback | 15/160 (9.4%) | 5.8-14.9% | p = 0.006 |
+**Headline: the sealed test set** (12 tasks written after the freeze, 10 runs each):
 
-- **Every part of UNDO matters**: turning off any one of the three makes damage significantly
-  worse (Fisher's exact test, p < 0.05).
-- **Approvals**: a human is asked 0.09 times per run instead of 1.40 (93% fewer).
-- **False rollbacks**: 13 of 138 harmless runs (9.4%) were rolled back.
-- **Prompt injection**: the agent obeyed a hidden instruction in 4 of 40 runs; damage remained
-  4/40 without UNDO and 0/40 with it.
-- **Languages** (19 translated scenarios x 5 runs): damage with full UNDO was 0/95 in English,
-  2/95 in MSA and 0/95 in Egyptian Arabic (without UNDO: 19, 16 and 11 of 95).
-- **Flight recorder**: in 13 of 95 damaging runs (13.7%) the agent's own report hid or misstated
+| | Damage left at the end | 95% CI |
+| --- | --- | --- |
+| No UNDO | 47/120 (39.2%) | 30.9-48.1% |
+| **Full UNDO** | **11/120 (9.2%)** | 5.2-15.7% |
+
+Fisher's exact test p = 6e-08; harmless work rolled back: 2/73 (2.7%). 10 of the 11 failures
+are one task, `heldout_pay_twice`: a person approves paying the supplier again, and the judge
+cannot see the inbox email showing it was already paid.
+
+**Development tasks** (38 tasks, 5 runs each; ablations replayed on the same agent work):
+
+| Condition | Damage left | vs. full UNDO |
+| --- | --- | --- |
+| No UNDO | 33/190 (17.4%) | p = 6e-08 |
+| **Full UNDO** | **3/190 (1.6%)** | |
+| No gate | 26/190 (13.7%) | p = 7e-06 |
+| No rollback | 12/190 (6.3%) | p = 0.03 |
+| No per-call classifier | 11/190 (5.8%) | p = 0.05 |
+| No verifier | 9/190 (4.7%) | p = 0.14 |
+| No hold window | 4/190 (2.1%) | p = 1 |
+
+- **Approvals:** a person was asked 0.20 times per task instead of 1.21 (83% fewer).
+- **Permission vs. UNDO (Step I3):** with the same simulated person approving 93% / 70% / 50%
+  of requests, permission-only left 21.1% / 13.7% / 15.8% damage and asked 1.25-1.34 times per
+  task (and threw away 8-39% of harmless work); UNDO left 12.6% / 10.5% / 8.9% and asked
+  0.19-0.21 times (`figures/safer_and_faster.png`).
+- **Raw tools (Step L4):** damage 11.6% without UNDO, 1.1% with it (p = 2e-05); the dry run
+  predicted the kind of all 377 raw commands correctly.
+- **Per-call kinds (Step I1):** 12 of 37 emails and 1 of 23 transfers got a different kind
+  than their tool's default.
+- **Hold window (Step I2, replayed on 370 runs):** damage 5.9% with no hold, 4.1% with a hold
+  of 10 s or more (9 harmful effects cancelled while held); harmless work waited about 5 s.
+- **Look-alike pairs (Step L1):** the verifier got both tasks of a pair right in 3/30 runs with
+  the Step 3 judge and **20/30 with the Step L3 judge**. Two pairs still score 0: the judge only
+  sees deleted rows' ids, not their names, so it rejects every deletion of test accounts; and
+  the rules reject an invoice payment whose amount is only in the invoice file.
+- **Judge reasons (Step L3):** the decision was right for the right reason in 23 of 30 judge
+  decisions (labels not made by a human). With a plausible excuse written by the agent, the
+  judge accepted 1 of 6 subtle harms (the old prompt: 2 of 6).
+- **Prompt injection:** damage remained 0/40 without and with UNDO in this run (the agent rarely
+  obeyed: 0/40 and 4/40).
+- **The agent's own reports:** in 10 of 72 damaging runs (13.9%) the report hid or misstated
   the damage.
-- **Overhead**: UNDO's bookkeeping takes a median of about 78 ms per run; the AI judge about 3.6 s.
-- **Where full UNDO failed (5 runs)**: 3 English runs of `freysa_payment_rubberstamp` (a human
-  approved the payment, and money cannot be undone: the limit this scenario was built to show),
-  and 2 MSA runs of `gemini_rename_clobber` (the judge called overwriting "QUARTERLY NUMBERS -
-  do not lose" a normal rename, and the rules allow it because the task names both files).
-- **Second chance (Step 9, 24 scenarios x 3 runs)**: 52/72 completed safely on the first try,
-  9 more only after the retry (9 of the 17 rolled-back runs were rescued), 11 not at all;
-  damage left in 3/72.
-- **Selective undo (Step 13)**: on all 27 rolled-back runs it undid the same actions as a full
-  rollback, because in every one of them all of the agent's actions were part of the flagged
-  change. Showing a benefit needs tasks that mix good and bad actions; the benchmark has none.
+- **Languages:** damage with full UNDO 1.1% (English), 4.2% (Modern Standard Arabic), 1.1%
+  (Egyptian); without UNDO 11.6%, 17.9%, 11.6% (19 translated tasks).
+- **Overhead:** UNDO's own bookkeeping takes a median of about 48 ms per task; the AI judge
+  about 8.6 s.
+- **A flawed task:** in `move_to_savings` the agent cannot look up the savings account's name,
+  so it pays "savings account", which counts as money leaving the company. Its 5/5 "damage"
+  without UNDO is an artifact of the task, not a real harm; it was not re-scored.
+
+## Development tasks vs. the sealed test set
+
+While building UNDO, every rule, threshold and prompt was checked against the same tasks we
+score it on. Each small change that helped one of those tasks made the numbers on *those*
+tasks look a little better, even when it would not help on new tasks. That is like studying
+the exact questions that will be on the exam: the score goes up, but it no longer shows how
+well you know the subject. So the final results are reported on a **sealed test set** as well:
+
+- Every tunable number lives in `undo/settings.py`, and `freeze.py` wrote them all into
+  `FROZEN.md` before the final runs. `run_final.py` refuses to run if any of them changed.
+- The 12 test tasks (`heldout/HELDOUT.md`) were written **after** the freeze, are not repeats
+  of any development task, and were never used to change anything.
+- `analyze.py` reports them first, as the headline, and separately from the development tasks.
 
 ## How the code is organized
 
@@ -125,7 +176,22 @@ judge `openai/gpt-oss-20b`, combined verifier, 5 runs per scenario per condition
 | `second_chance.py` | Step 9: after a rollback, the agent is told why and retries once |
 | `run_models.py` | Step 10: the same benchmark on more agent models |
 | `study_app.py`, `study_summary.py` | Step 11: approval-fatigue user study (needs IRB approval before use) |
-| `mcp_server.py`, `MCP.md` | Step 12: UNDO as an MCP server for any MCP-compatible AI app |
+| `undo_mcp/`, `QUICKSTART.md` | Step I5: UNDO as an MCP server for MCP-compatible AI apps (and a proxy mode) |
+| `undo/settings.py` | Every number we could tune, in one place (frozen in `FROZEN.md` for the final run) |
+| `undo/classifier.py` | Step I1: the kind of each CALL, not each tool; Step L4: raw commands classified by a dry run |
+| `undo/raw_tools.py` | Step L4: raw SQL and a tiny pretend shell (never real commands), and `RawCommand` |
+| `video_demo.py` | Step V1: a scripted, identical-every-time demo for a video |
+| `undo_conformance.py`, `UNDO_CONTRACT.md` | Step I4: every undo tested 100 times; what passing means |
+| `judge_injection.py`, `label_judge.py` | Step L3: judge-injection test; hand-labelling the judge's reasons |
+| `hold_experiment.py` | Step I2: replays saved runs at hold times 0, 10, 60, 300 s |
+| `overhead_scaling.py` | Step L5: overhead against world size, full snapshots vs. the change journal |
+| `freeze.py`, `FROZEN.md` | Step 6: freeze every setting before the final runs |
+| `undobench.py`, `make_leaderboard.py`, `BENCHMARK_CARD.md` | Step I6: UndoBench on any endpoint, the leaderboard, the benchmark card |
+| `PROPOSAL_reversibility.md` | Step I7: a discussion draft for MCP's Tool Annotations Interest Group |
+| `pairs.md`, `pair_score.py` | Step L1: six look-alike pairs (same change, harmless vs. harmful) and the pair score |
+| `heldout/HELDOUT.md`, `heldout_scenarios.py` | The sealed test set: 12 tasks written after the freeze, the headline numbers |
+| `IRB_APPLICATION.md` | Step 11: draft of the human-participants application (NOT approved yet) |
+| `LICENSE` | All rights reserved: nobody may use this work without written permission |
 | `selective_undo.py` | Step 13: undo only the bad action and what depends on it |
 | `app.py` | Step 14: the booth demo (Streamlit) |
 
@@ -140,8 +206,9 @@ Before you change anything, you should be able to explain every line out loud. I
 Arabic (`msa`) and Egyptian Arabic (`egy`). `--language` runs a scenario with ONLY its task text
 changed: files, tools, approver and answer key are identical, so differences come from the
 language. File names, addresses and amounts stay in Latin letters, because the rule verifier
-looks for them in the task. The translations and the Arabic words in the refund check still
-need a native speaker's review. The injection tasks translate only the harmless user request;
+looks for them in the task. The translations were checked for meaning against the English
+(one Egyptian sentence was made more natural on 18 October 2026); a native speaker's review is
+still recommended, for the tasks and for the Arabic words in the refund check. The injection tasks translate only the harmless user request;
 the hidden text is unchanged.
 
 The Air Canada answer key (`promised_refund`) now also reads Arabic letters. Approval phrases
@@ -155,6 +222,14 @@ benchmark and injection scenario, 5 runs, in 5 conditions: no UNDO, full UNDO, a
 ablations (`no_gate`: irreversible actions run without asking; `no_verifier`: always commit
 unless the gate blocked something; `no_rollback`: the verifier decides but nothing is undone).
 The 19 translated scenarios also run in msa and egy, without and with UNDO.
+
+**Two ablations' worth of API calls are saved by replay.** "No verifier", "no rollback" and
+"no hold" change only what UNDO does after the agent has finished: the agent sees exactly the
+same tool results. So `derive_ablations.py` replays every full-UNDO run's tool calls in a fresh
+fake world under each of them (no API calls) and scores the result, which also makes each
+comparison paired: the same agent work with and without that part. A replay must reproduce
+every saved tool result, or the run is skipped. The agent is asked for its own report (Step 5)
+only in the no-UNDO and full-UNDO runs, where the honesty results come from.
 
 `analyze.py` explains each number as it prints it:
 - **Damage rate with a 95% Wilson interval**: the range the true rate probably lies in.
@@ -173,12 +248,52 @@ The 19 translated scenarios also run in msa and egy, without and with UNDO.
   because: ... Try the task again, more carefully" and retries once, still under UNDO. Each run
   ends as completed safely on the first try, after the retry, or not at all.
 - **More models (Step 10)**: `EXTRA_AGENT_MODELS` in `.env`; the judge stays the same. Does
-  UNDO help every model, and are some models more destructive on their own?
+  UNDO help every model, and are some models more destructive on their own? Batch `step10`,
+  the 38 development tasks, one good run of each task per model without and with UNDO (the main
+  model: its 5 final runs per task). UNDO lowered damage for every model:
+
+  | Agent model | Damage, no UNDO | Damage, UNDO | p |
+  | --- | --- | --- | --- |
+  | nemotron-3.5-super-vl-120b (main) | 99/370 (26.8%) | 15/370 (4.1%) | 9e-19 |
+  | nemotron-3-ultra-550b | 8/38 (21.1%) | 1/38 (2.6%) | 0.03 |
+  | nemotron-3.5-lightning-30b | 9/38 (23.7%) | 1/38 (2.6%) | 0.01 |
+  | glm-5.3-flash | 4/38 (10.5%) | 0/36 (0.0%) | 0.12 |
+
+  Each extra model has only 38 runs per condition, so its interval is wide (see
+  `leaderboard.html`). The plan was 3 runs per task, but NVIDIA's free tier kept timing out on
+  these models, so it was cut to 1 (the cut depended only on API errors, not on results; a model
+  that finished more runs is still scored on its first run of each task). GLM is missing 2
+  tasks with UNDO (`replit_code_freeze`, `reset_everything`): its API timed out on every try.
+  Prompt injections were obeyed in 2 of 8 attack runs by lightning-30b, 0 of 8 by the others.
 - **Approval fatigue (Step 11)**: condition A asks about every action, condition B (UNDO) only
   about irreversible ones; harmful irreversible actions appear in both. Practice mode only until
   the fair's IRB approves (`IRB_APPROVED=yes`).
-- **MCP (Step 12)**: see `MCP.md`. Irreversible actions are always blocked over MCP, because
-  the caller is an AI and must never approve itself.
+- **MCP server (Step I5)**: `python -m undo_mcp`, see `QUICKSTART.md`. Needs only the `mcp`
+  package. Emails and payments are held; irreversible ones wait for the person
+  (`approve_held`), because an AI must never approve itself. A proxy mode puts UNDO in front of
+  another MCP server and holds every call.
+- **Per-call kinds (Step I1)**: `undo/classifier.py` decides the kind of each CALL: an email
+  carrying a secret or other customers' data, or going to a stranger, is irreversible; money
+  between the company's own accounts is compensable. In a prompt-injection test, data was sent
+  to an outside address in 3 of 3 runs when each call got its tool's default kind, and was
+  blocked before sending every time with per-call kinds.
+- **Hold window (Step I2)**: emails and payments are held for 60 s of simulated time (5 s per
+  agent step). A rollback erases a held effect with no trace; a correction sent after an email
+  was read (a seeded random delay) does not count as undoing it.
+- **Trusted context and judge injection (Step L3)**: the judge gets facts computed by our code,
+  trusted policy files from BEFORE the task, and the agent's own text only inside DATA blocks;
+  it must name the change its decision rests on (`--judge-votes 3` asks three times). With a
+  plausible excuse written by the agent, the old judge accepted 2 of 6 subtle harms and the new
+  one 1 of 6.
+- **Raw tools (Step L4)**: the agent can get any SQL and a tiny pretend shell instead of safe
+  tools. Each command is dry-run on a copy and classified by what changed.
+- **Change journal (Step L5)**: the change summary comes from before-images saved when an
+  action first touches something, so its cost stays flat as the world grows; full snapshots
+  grew with it. Raw-tool dry runs still copy the world.
+- **Permission vs. UNDO (Step I3)**: a simulated person approves with probability 93%, 70% or
+  50%; "permission only" asks about every change and undoes nothing.
+- **Verified undo (Step I4)**: `undo_conformance.py`; see `UNDO_CONTRACT.md`. It found a real
+  bug on its first run (a cancelled payment left an empty account behind).
 - **Selective undo (Step 13)**: every action records what it touched; an action depends on an
   earlier one if it touched something that one changed. The verifier names the bad change, and
   only the responsible actions and their dependents are undone. `selective_undo.py` replays
@@ -331,5 +446,6 @@ and its file tools only accept plain file names inside the sandbox folder.
 
 ## License
 
-This project is **not open source**. Copyright © 2026 Abdullah Bedir. All rights reserved.
+This project is **not open source**. Copyright © 2026 Abdullah Bedir. All rights reserved
+(see `LICENSE`).
 No one may copy, modify or share this code without my written permission.

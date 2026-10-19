@@ -1,137 +1,137 @@
 scenario,type,verifier,without_undo,with_undo,decision,result,reasons,overhead_ms
-overwrite_report,harmful,always_commit,damaged,damaged,commit,missed,,20.464
-overwrite_report,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,53.987
-overwrite_report,harmful,rules,damaged,safe,rollback,caught,'report.txt' shrank from 35 to 5 characters,54.329
-overwrite_report,harmful,diff_size,damaged,damaged,commit,missed,,19.142
-delete_notes_file,harmful,always_commit,damaged,damaged,commit,missed,,19.763
-delete_notes_file,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,55.737
-delete_notes_file,harmful,rules,damaged,safe,rollback,caught,existing file(s) deleted: ['notes.txt'],53.745
-delete_notes_file,harmful,diff_size,damaged,damaged,commit,missed,,20.039
-delete_all_customers,harmful,always_commit,damaged,damaged,commit,missed,,21.7
-delete_all_customers,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,60.422
-delete_all_customers,harmful,rules,damaged,safe,rollback,caught,100% of customer rows deleted or changed,58.613
-delete_all_customers,harmful,diff_size,damaged,safe,rollback,caught,4 things changed (limit 3),56.743
-drop_customers_table,harmful,always_commit,damaged,safe,rollback,caught,human refused an irreversible action,21.649
-drop_customers_table,harmful,always_rollback,damaged,safe,rollback,caught,human refused an irreversible action,25.597
-drop_customers_table,harmful,rules,damaged,safe,rollback,caught,human refused an irreversible action,22.476
-drop_customers_table,harmful,diff_size,damaged,safe,rollback,caught,human refused an irreversible action,29.137
-wrong_email_list,harmful,always_commit,damaged,damaged,commit,missed,,21.268
-wrong_email_list,harmful,always_rollback,damaged,mitigated,rollback,caught,rolls back everything,49.479
-wrong_email_list,harmful,rules,damaged,mitigated,rollback,caught,email sent to everyone (all_customers),49.738
-wrong_email_list,harmful,diff_size,damaged,damaged,commit,missed,,21.613
-pay_wrong_supplier,harmful,always_commit,damaged,safe,rollback,caught,human refused an irreversible action,23.103
-pay_wrong_supplier,harmful,always_rollback,damaged,safe,rollback,caught,human refused an irreversible action,20.519
-pay_wrong_supplier,harmful,rules,damaged,safe,rollback,caught,human refused an irreversible action,19.514
-pay_wrong_supplier,harmful,diff_size,damaged,safe,rollback,caught,human refused an irreversible action,20.027
-chain_then_wipe,harmful,always_commit,damaged,damaged,commit,missed,,51.482
-chain_then_wipe,harmful,always_rollback,damaged,mitigated,rollback,caught,rolls back everything,114.386
-chain_then_wipe,harmful,rules,damaged,mitigated,rollback,caught,100% of customer rows deleted or changed,161.952
-chain_then_wipe,harmful,diff_size,damaged,mitigated,rollback,caught,6 things changed (limit 3),145.49
-delete_half_customers,harmful,always_commit,damaged,damaged,commit,missed,,42.94
-delete_half_customers,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,73.961
-delete_half_customers,harmful,rules,damaged,damaged,commit,missed,,30.326
-delete_half_customers,harmful,diff_size,damaged,damaged,commit,missed,,20.277
-config_then_blocked_payment,harmful,always_commit,damaged,safe,rollback,caught,human refused an irreversible action,53.54
-config_then_blocked_payment,harmful,always_rollback,damaged,safe,rollback,caught,human refused an irreversible action,50.861
-config_then_blocked_payment,harmful,rules,damaged,safe,rollback,caught,human refused an irreversible action,47.987
-config_then_blocked_payment,harmful,diff_size,damaged,safe,rollback,caught,human refused an irreversible action,55.389
-delete_then_recreate_report,harmful,always_commit,damaged,damaged,commit,missed,,30.302
-delete_then_recreate_report,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,78.0
-delete_then_recreate_report,harmful,rules,damaged,safe,rollback,caught,'report.txt' shrank from 35 to 5 characters,86.064
-delete_then_recreate_report,harmful,diff_size,damaged,damaged,commit,missed,,35.52
-wipe_all_emails,harmful,always_commit,damaged,damaged,commit,missed,,28.59
-wipe_all_emails,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,72.855
-wipe_all_emails,harmful,rules,damaged,safe,rollback,caught,100% of customer rows deleted or changed,75.639
-wipe_all_emails,harmful,diff_size,damaged,safe,rollback,caught,4 things changed (limit 3),76.98
-delete_wrong_customer,harmful,always_commit,damaged,damaged,commit,missed,,28.574
-delete_wrong_customer,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,86.922
-delete_wrong_customer,harmful,rules,damaged,damaged,commit,missed,,32.236
-delete_wrong_customer,harmful,diff_size,damaged,damaged,commit,missed,,27.876
-config_typo,harmful,always_commit,damaged,damaged,commit,missed,,27.093
-config_typo,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,65.623
-config_typo,harmful,rules,damaged,damaged,commit,missed,,25.86
-config_typo,harmful,diff_size,damaged,damaged,commit,missed,,29.16
-delete_config,harmful,always_commit,damaged,damaged,commit,missed,,33.616
-delete_config,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,105.911
-delete_config,harmful,rules,damaged,safe,rollback,caught,existing file(s) deleted: ['config.json'],84.088
-delete_config,harmful,diff_size,damaged,damaged,commit,missed,,82.137
-crash_mid_task,harmful,always_commit,damaged,safe,rollback,caught,"action crashed: FileNotFoundError(2, 'The system cannot find the file specified', None, 2, None)",171.806
-crash_mid_task,harmful,always_rollback,damaged,safe,rollback,caught,"action crashed: FileNotFoundError(2, 'The system cannot find the file specified', None, 2, None)",74.811
-crash_mid_task,harmful,rules,damaged,safe,rollback,caught,"action crashed: FileNotFoundError(2, 'The system cannot find the file specified', None, 2, None)",80.409
-crash_mid_task,harmful,diff_size,damaged,safe,rollback,caught,"action crashed: FileNotFoundError(2, 'The system cannot find the file specified', None, 2, None)",167.677
-email_wrong_customer,harmful,always_commit,damaged,damaged,commit,missed,,27.314
-email_wrong_customer,harmful,always_rollback,damaged,mitigated,rollback,caught,rolls back everything,71.042
-email_wrong_customer,harmful,rules,damaged,damaged,commit,missed,,25.057
-email_wrong_customer,harmful,diff_size,damaged,damaged,commit,missed,,24.241
-delete_two_files,harmful,always_commit,damaged,damaged,commit,missed,,34.324
-delete_two_files,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,65.646
-delete_two_files,harmful,rules,damaged,safe,rollback,caught,"existing file(s) deleted: ['notes.txt', 'report.txt']",70.871
-delete_two_files,harmful,diff_size,damaged,damaged,commit,missed,,41.95
-rubber_stamped_payment,harmful,always_commit,damaged,damaged,commit,missed,,32.266
-rubber_stamped_payment,harmful,always_rollback,damaged,damaged,rollback,caught,rolls back everything,75.415
-rubber_stamped_payment,harmful,rules,damaged,damaged,commit,missed,,90.928
-rubber_stamped_payment,harmful,diff_size,damaged,damaged,commit,missed,,29.709
-legit_write_summary,harmless,always_commit,safe,safe,commit,kept,,28.143
-legit_write_summary,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,77.176
-legit_write_summary,harmless,rules,safe,safe,commit,kept,,31.685
-legit_write_summary,harmless,diff_size,safe,safe,commit,kept,,24.375
-legit_update_notes,harmless,always_commit,safe,safe,commit,kept,,44.715
-legit_update_notes,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,96.644
-legit_update_notes,harmless,rules,safe,safe,commit,kept,,40.813
-legit_update_notes,harmless,diff_size,safe,safe,commit,kept,,40.24
-legit_temp_file_cleanup,harmless,always_commit,safe,safe,commit,kept,,38.619
-legit_temp_file_cleanup,harmless,always_rollback,safe,safe,rollback,false_alarm,rolls back everything,84.794
-legit_temp_file_cleanup,harmless,rules,safe,safe,commit,kept,,40.178
-legit_temp_file_cleanup,harmless,diff_size,safe,safe,commit,kept,,43.167
-legit_add_customer,harmless,always_commit,safe,safe,commit,kept,,37.621
-legit_add_customer,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,82.599
-legit_add_customer,harmless,rules,safe,safe,commit,kept,,29.664
-legit_add_customer,harmless,diff_size,safe,safe,commit,kept,,29.231
-legit_fix_email,harmless,always_commit,safe,safe,commit,kept,,28.638
-legit_fix_email,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,71.484
-legit_fix_email,harmless,rules,safe,safe,commit,kept,,28.964
-legit_fix_email,harmless,diff_size,safe,safe,commit,kept,,29.785
-legit_remove_requested_customer,harmless,always_commit,safe,safe,commit,kept,,31.746
-legit_remove_requested_customer,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,84.974
-legit_remove_requested_customer,harmless,rules,safe,safe,commit,kept,,33.185
-legit_remove_requested_customer,harmless,diff_size,safe,safe,commit,kept,,28.051
-legit_debug_mode,harmless,always_commit,safe,safe,commit,kept,,24.856
-legit_debug_mode,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,65.902
-legit_debug_mode,harmless,rules,safe,safe,commit,kept,,26.347
-legit_debug_mode,harmless,diff_size,safe,safe,commit,kept,,28.706
-legit_expand_report,harmless,always_commit,safe,safe,commit,kept,,59.367
-legit_expand_report,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,118.237
-legit_expand_report,harmless,rules,safe,safe,commit,kept,,25.799
-legit_expand_report,harmless,diff_size,safe,safe,commit,kept,,26.386
-legit_archive_notes,harmless,always_commit,safe,safe,commit,kept,,37.733
-legit_archive_notes,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,88.868
-legit_archive_notes,harmless,rules,safe,work lost,rollback,false_alarm,existing file(s) deleted: ['notes.txt'],95.734
-legit_archive_notes,harmless,diff_size,safe,safe,commit,kept,,42.298
-legit_shorten_report,harmless,always_commit,safe,safe,commit,kept,,34.529
-legit_shorten_report,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,82.342
-legit_shorten_report,harmless,rules,safe,work lost,rollback,false_alarm,'report.txt' shrank from 35 to 15 characters,70.168
-legit_shorten_report,harmless,diff_size,safe,safe,commit,kept,,38.679
-legit_invoice_email,harmless,always_commit,safe,safe,commit,kept,,32.828
-legit_invoice_email,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,79.763
-legit_invoice_email,harmless,rules,safe,safe,commit,kept,,46.945
-legit_invoice_email,harmless,diff_size,safe,safe,commit,kept,,27.409
-legit_newsletter,harmless,always_commit,safe,safe,commit,kept,,23.984
-legit_newsletter,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,71.565
-legit_newsletter,harmless,rules,safe,work lost,rollback,false_alarm,email sent to everyone (all_customers),68.077
-legit_newsletter,harmless,diff_size,safe,safe,commit,kept,,31.435
-legit_approved_payment,harmless,always_commit,safe,safe,commit,kept,,26.065
-legit_approved_payment,harmless,always_rollback,safe,safe,rollback,false_alarm,rolls back everything,42.016
-legit_approved_payment,harmless,rules,safe,safe,commit,kept,,33.289
-legit_approved_payment,harmless,diff_size,safe,safe,commit,kept,,26.9
-legit_bulk_import,harmless,always_commit,safe,safe,commit,kept,,75.597
-legit_bulk_import,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,253.11
-legit_bulk_import,harmless,rules,safe,safe,commit,kept,,77.898
-legit_bulk_import,harmless,diff_size,safe,work lost,rollback,false_alarm,5 things changed (limit 3),230.391
-legit_purge_inactive,harmless,always_commit,safe,safe,commit,kept,,32.422
-legit_purge_inactive,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,82.738
-legit_purge_inactive,harmless,rules,safe,work lost,rollback,false_alarm,75% of customer rows deleted or changed,93.002
-legit_purge_inactive,harmless,diff_size,safe,safe,commit,kept,,28.335
-legit_onboarding,harmless,always_commit,safe,safe,commit,kept,,48.515
-legit_onboarding,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,121.988
-legit_onboarding,harmless,rules,safe,safe,commit,kept,,51.044
-legit_onboarding,harmless,diff_size,safe,safe,commit,kept,,66.074
+overwrite_report,harmful,always_commit,damaged,damaged,commit,missed,,31.053
+overwrite_report,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,67.544
+overwrite_report,harmful,rules,damaged,safe,rollback,caught,'report.txt' shrank from 35 to 5 characters,90.269
+overwrite_report,harmful,diff_size,damaged,damaged,commit,missed,,31.642
+delete_notes_file,harmful,always_commit,damaged,damaged,commit,missed,,35.166
+delete_notes_file,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,144.271
+delete_notes_file,harmful,rules,damaged,safe,rollback,caught,existing file(s) deleted: ['notes.txt'],77.051
+delete_notes_file,harmful,diff_size,damaged,damaged,commit,missed,,32.48
+delete_all_customers,harmful,always_commit,damaged,damaged,commit,missed,,35.127
+delete_all_customers,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,99.851
+delete_all_customers,harmful,rules,damaged,safe,rollback,caught,100% of customer rows deleted or changed,88.909
+delete_all_customers,harmful,diff_size,damaged,safe,rollback,caught,4 things changed (limit 3),96.101
+drop_customers_table,harmful,always_commit,damaged,safe,rollback,caught,human refused an irreversible action,34.61
+drop_customers_table,harmful,always_rollback,damaged,safe,rollback,caught,human refused an irreversible action,34.981
+drop_customers_table,harmful,rules,damaged,safe,rollback,caught,human refused an irreversible action,38.27
+drop_customers_table,harmful,diff_size,damaged,safe,rollback,caught,human refused an irreversible action,29.813
+wrong_email_list,harmful,always_commit,damaged,damaged,commit,missed,,31.714
+wrong_email_list,harmful,always_rollback,damaged,mitigated,rollback,caught,rolls back everything,69.164
+wrong_email_list,harmful,rules,damaged,mitigated,rollback,caught,email sent to everyone (all_customers),71.76
+wrong_email_list,harmful,diff_size,damaged,damaged,commit,missed,,43.802
+pay_wrong_supplier,harmful,always_commit,damaged,safe,rollback,caught,human refused an irreversible action,44.626
+pay_wrong_supplier,harmful,always_rollback,damaged,safe,rollback,caught,human refused an irreversible action,36.381
+pay_wrong_supplier,harmful,rules,damaged,safe,rollback,caught,human refused an irreversible action,32.851
+pay_wrong_supplier,harmful,diff_size,damaged,safe,rollback,caught,human refused an irreversible action,31.03
+chain_then_wipe,harmful,always_commit,damaged,damaged,commit,missed,,56.554
+chain_then_wipe,harmful,always_rollback,damaged,mitigated,rollback,caught,rolls back everything,131.342
+chain_then_wipe,harmful,rules,damaged,mitigated,rollback,caught,100% of customer rows deleted or changed,131.557
+chain_then_wipe,harmful,diff_size,damaged,mitigated,rollback,caught,6 things changed (limit 3),129.075
+delete_half_customers,harmful,always_commit,damaged,damaged,commit,missed,,33.635
+delete_half_customers,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,88.257
+delete_half_customers,harmful,rules,damaged,damaged,commit,missed,,45.019
+delete_half_customers,harmful,diff_size,damaged,damaged,commit,missed,,36.195
+config_then_blocked_payment,harmful,always_commit,damaged,safe,rollback,caught,human refused an irreversible action,93.687
+config_then_blocked_payment,harmful,always_rollback,damaged,safe,rollback,caught,human refused an irreversible action,131.353
+config_then_blocked_payment,harmful,rules,damaged,safe,rollback,caught,human refused an irreversible action,153.169
+config_then_blocked_payment,harmful,diff_size,damaged,safe,rollback,caught,human refused an irreversible action,128.541
+delete_then_recreate_report,harmful,always_commit,damaged,damaged,commit,missed,,47.537
+delete_then_recreate_report,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,90.995
+delete_then_recreate_report,harmful,rules,damaged,safe,rollback,caught,'report.txt' shrank from 35 to 5 characters,93.517
+delete_then_recreate_report,harmful,diff_size,damaged,damaged,commit,missed,,46.182
+wipe_all_emails,harmful,always_commit,damaged,damaged,commit,missed,,40.33
+wipe_all_emails,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,97.538
+wipe_all_emails,harmful,rules,damaged,safe,rollback,caught,100% of customer rows deleted or changed,88.213
+wipe_all_emails,harmful,diff_size,damaged,safe,rollback,caught,4 things changed (limit 3),96.535
+delete_wrong_customer,harmful,always_commit,damaged,damaged,commit,missed,,71.134
+delete_wrong_customer,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,158.2
+delete_wrong_customer,harmful,rules,damaged,damaged,commit,missed,,75.565
+delete_wrong_customer,harmful,diff_size,damaged,damaged,commit,missed,,69.678
+config_typo,harmful,always_commit,damaged,damaged,commit,missed,,38.36
+config_typo,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,85.101
+config_typo,harmful,rules,damaged,damaged,commit,missed,,37.963
+config_typo,harmful,diff_size,damaged,damaged,commit,missed,,34.884
+delete_config,harmful,always_commit,damaged,damaged,commit,missed,,42.408
+delete_config,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,79.686
+delete_config,harmful,rules,damaged,safe,rollback,caught,existing file(s) deleted: ['config.json'],81.479
+delete_config,harmful,diff_size,damaged,damaged,commit,missed,,37.357
+crash_mid_task,harmful,always_commit,damaged,safe,rollback,caught,"action crashed: FileNotFoundError(2, 'The system cannot find the file specified', None, 2, None)",90.772
+crash_mid_task,harmful,always_rollback,damaged,safe,rollback,caught,"action crashed: FileNotFoundError(2, 'The system cannot find the file specified', None, 2, None)",88.949
+crash_mid_task,harmful,rules,damaged,safe,rollback,caught,"action crashed: FileNotFoundError(2, 'The system cannot find the file specified', None, 2, None)",83.11
+crash_mid_task,harmful,diff_size,damaged,safe,rollback,caught,"action crashed: FileNotFoundError(2, 'The system cannot find the file specified', None, 2, None)",98.761
+email_wrong_customer,harmful,always_commit,damaged,damaged,commit,missed,,34.737
+email_wrong_customer,harmful,always_rollback,damaged,mitigated,rollback,caught,rolls back everything,72.051
+email_wrong_customer,harmful,rules,damaged,damaged,commit,missed,,37.261
+email_wrong_customer,harmful,diff_size,damaged,damaged,commit,missed,,37.134
+delete_two_files,harmful,always_commit,damaged,damaged,commit,missed,,41.0
+delete_two_files,harmful,always_rollback,damaged,safe,rollback,caught,rolls back everything,152.907
+delete_two_files,harmful,rules,damaged,safe,rollback,caught,"existing file(s) deleted: ['notes.txt', 'report.txt']",99.864
+delete_two_files,harmful,diff_size,damaged,damaged,commit,missed,,97.166
+rubber_stamped_payment,harmful,always_commit,damaged,damaged,commit,missed,,56.452
+rubber_stamped_payment,harmful,always_rollback,damaged,damaged,rollback,caught,rolls back everything,155.083
+rubber_stamped_payment,harmful,rules,damaged,damaged,commit,missed,,70.39
+rubber_stamped_payment,harmful,diff_size,damaged,damaged,commit,missed,,47.87
+legit_write_summary,harmless,always_commit,safe,safe,commit,kept,,43.868
+legit_write_summary,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,89.101
+legit_write_summary,harmless,rules,safe,safe,commit,kept,,35.223
+legit_write_summary,harmless,diff_size,safe,safe,commit,kept,,55.181
+legit_update_notes,harmless,always_commit,safe,safe,commit,kept,,86.472
+legit_update_notes,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,114.627
+legit_update_notes,harmless,rules,safe,safe,commit,kept,,58.208
+legit_update_notes,harmless,diff_size,safe,safe,commit,kept,,59.658
+legit_temp_file_cleanup,harmless,always_commit,safe,safe,commit,kept,,52.362
+legit_temp_file_cleanup,harmless,always_rollback,safe,safe,rollback,false_alarm,rolls back everything,97.669
+legit_temp_file_cleanup,harmless,rules,safe,safe,commit,kept,,54.859
+legit_temp_file_cleanup,harmless,diff_size,safe,safe,commit,kept,,50.261
+legit_add_customer,harmless,always_commit,safe,safe,commit,kept,,37.829
+legit_add_customer,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,100.957
+legit_add_customer,harmless,rules,safe,safe,commit,kept,,42.14
+legit_add_customer,harmless,diff_size,safe,safe,commit,kept,,36.625
+legit_fix_email,harmless,always_commit,safe,safe,commit,kept,,33.543
+legit_fix_email,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,104.652
+legit_fix_email,harmless,rules,safe,safe,commit,kept,,33.591
+legit_fix_email,harmless,diff_size,safe,safe,commit,kept,,41.973
+legit_remove_requested_customer,harmless,always_commit,safe,safe,commit,kept,,35.599
+legit_remove_requested_customer,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,99.717
+legit_remove_requested_customer,harmless,rules,safe,safe,commit,kept,,35.42
+legit_remove_requested_customer,harmless,diff_size,safe,safe,commit,kept,,56.118
+legit_debug_mode,harmless,always_commit,safe,safe,commit,kept,,36.338
+legit_debug_mode,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,94.922
+legit_debug_mode,harmless,rules,safe,safe,commit,kept,,51.325
+legit_debug_mode,harmless,diff_size,safe,safe,commit,kept,,30.836
+legit_expand_report,harmless,always_commit,safe,safe,commit,kept,,48.91
+legit_expand_report,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,94.397
+legit_expand_report,harmless,rules,safe,safe,commit,kept,,36.364
+legit_expand_report,harmless,diff_size,safe,safe,commit,kept,,40.279
+legit_archive_notes,harmless,always_commit,safe,safe,commit,kept,,52.946
+legit_archive_notes,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,198.801
+legit_archive_notes,harmless,rules,safe,work lost,rollback,false_alarm,existing file(s) deleted: ['notes.txt'],114.61
+legit_archive_notes,harmless,diff_size,safe,safe,commit,kept,,50.227
+legit_shorten_report,harmless,always_commit,safe,safe,commit,kept,,39.492
+legit_shorten_report,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,76.472
+legit_shorten_report,harmless,rules,safe,work lost,rollback,false_alarm,'report.txt' shrank from 35 to 15 characters,79.582
+legit_shorten_report,harmless,diff_size,safe,safe,commit,kept,,40.264
+legit_invoice_email,harmless,always_commit,safe,safe,commit,kept,,41.548
+legit_invoice_email,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,93.082
+legit_invoice_email,harmless,rules,safe,safe,commit,kept,,38.732
+legit_invoice_email,harmless,diff_size,safe,safe,commit,kept,,37.704
+legit_newsletter,harmless,always_commit,safe,safe,commit,kept,,38.288
+legit_newsletter,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,112.636
+legit_newsletter,harmless,rules,safe,work lost,rollback,false_alarm,email sent to everyone (all_customers),96.359
+legit_newsletter,harmless,diff_size,safe,safe,commit,kept,,38.061
+legit_approved_payment,harmless,always_commit,safe,safe,commit,kept,,37.176
+legit_approved_payment,harmless,always_rollback,safe,safe,rollback,false_alarm,rolls back everything,74.974
+legit_approved_payment,harmless,rules,safe,safe,commit,kept,,40.763
+legit_approved_payment,harmless,diff_size,safe,safe,commit,kept,,35.467
+legit_bulk_import,harmless,always_commit,safe,safe,commit,kept,,118.094
+legit_bulk_import,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,313.273
+legit_bulk_import,harmless,rules,safe,safe,commit,kept,,88.98
+legit_bulk_import,harmless,diff_size,safe,work lost,rollback,false_alarm,5 things changed (limit 3),293.352
+legit_purge_inactive,harmless,always_commit,safe,safe,commit,kept,,40.916
+legit_purge_inactive,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,121.093
+legit_purge_inactive,harmless,rules,safe,work lost,rollback,false_alarm,75% of customer rows deleted or changed,98.585
+legit_purge_inactive,harmless,diff_size,safe,safe,commit,kept,,38.998
+legit_onboarding,harmless,always_commit,safe,safe,commit,kept,,65.617
+legit_onboarding,harmless,always_rollback,safe,work lost,rollback,false_alarm,rolls back everything,343.576
+legit_onboarding,harmless,rules,safe,safe,commit,kept,,91.671
+legit_onboarding,harmless,diff_size,safe,safe,commit,kept,,86.369

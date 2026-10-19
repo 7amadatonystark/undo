@@ -8,3 +8,5 @@ __pycache__/
 .venv/
 results/runs.lock
 study_practice.csv
+results/llm_clock.txt
+results/llm_clock.lock

@@ -16,6 +16,7 @@ Usage:
     reply.tool_calls     # the tools it wants to call, or None
 """
 
+import os
 import time
 
 import openai
@@ -28,20 +29,63 @@ MAX_TRIES = 3
 
 # max_retries=0 turns off the openai package's own hidden retries, so the rules in
 # this file are the only ones (otherwise it would retry inside our retries).
-# timeout: give up on one request after 2 minutes instead of the default 10.
+# timeout: give up on one request after 2 minutes (a dropped connection then costs 2 minutes,
+# not 10). It was 1 minute, but the biggest Step 10 models often need longer than that to answer.
 client = openai.OpenAI(base_url=config.NVIDIA_BASE_URL, api_key=config.NVIDIA_API_KEY,
                        max_retries=0, timeout=120)
 
+# Step I6: a model may live on another OpenAI-compatible endpoint. undobench.py puts its
+# connection here as {model name: client}; every other model uses NVIDIA's `client`.
+OTHER_CLIENTS = {}
+
 last_request_time = 0.0     # when the last request was sent (seconds, time.monotonic())
+
+# Several programs at once (run_final.py's workers) share ONE throttle through this file: it
+# holds the time of the last request ANY of them sent, so together they never pass the limit,
+# and no worker waits while the others are idle. None = this program throttles on its own.
+SHARED_CLOCK = None
 
 
 def wait_for_turn():
     """Sleep until SECONDS_BETWEEN_REQUESTS have passed since the last request."""
     global last_request_time
+    if SHARED_CLOCK:
+        return wait_for_shared_turn()
     wait = SECONDS_BETWEEN_REQUESTS - (time.monotonic() - last_request_time)
     if wait > 0:
         time.sleep(wait)
     last_request_time = time.monotonic()
+
+
+def wait_for_shared_turn():
+    """The same rule, across programs. A lock file lets one program at a time read the shared
+    time, wait until its turn, and write the new time (time.time(), the same in every program).
+    A lock left by a program that crashed is removed after 60 seconds. (On Windows a lock that
+    another program still has open cannot be deleted: then we simply keep waiting.)"""
+    lock = SHARED_CLOCK.with_suffix(".lock")
+    while True:
+        try:
+            handle = os.open(lock, os.O_CREAT | os.O_EXCL)
+            break
+        except (FileExistsError, PermissionError):   # taken (or, on Windows, being deleted)
+            try:
+                if time.time() - lock.stat().st_mtime > 60:
+                    lock.unlink()
+            except OSError:              # gone already, or still open in another program
+                pass
+            time.sleep(0.05)
+    try:
+        try:
+            last = float(SHARED_CLOCK.read_text())
+        except (FileNotFoundError, ValueError):
+            last = 0.0
+        wait = SECONDS_BETWEEN_REQUESTS - (time.time() - last)
+        if wait > 0:
+            time.sleep(wait)
+        SHARED_CLOCK.write_text(str(time.time()))
+    finally:
+        os.close(handle)
+        lock.unlink()
 
 
 def is_worth_retrying(error):
@@ -80,7 +124,8 @@ def send_once(model, messages, tools, temperature):
         request["tools"] = tools
     if temperature is not None:
         request["temperature"] = temperature
-    return client.chat.completions.create(**request)    # ** passes each key as an argument
+    connection = OTHER_CLIENTS.get(model, client)
+    return connection.chat.completions.create(**request)    # ** passes each key as an argument
 
 
 def chat(messages, tools=None, model=None, temperature=None):

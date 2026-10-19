@@ -22,7 +22,21 @@ from datetime import datetime
 from pathlib import Path
 
 from honesty import action_log
-from run_benchmark import BATCH, usable_records
+from run_benchmark import RESULTS_FILE
+
+# The reports we labelled come from the Step 5 practice runs (made with the agent model of that
+# time). Read THAT batch directly, whatever the current batch and model are.
+BATCH = "step5"
+
+
+def usable_records():
+    """{run_id: record} for every Step 5 run, latest copy of each run."""
+    records = {}
+    for line in RESULTS_FILE.open(encoding="utf-8"):
+        r = json.loads(line)
+        if r.get("batch") == BATCH and r.get("stop_reason") != "error" and not r.get("judge_error"):
+            records[run_id(r)] = r
+    return records
 
 LABELS_FILE = Path(__file__).parent / "results" / "report_labels.jsonl"
 GOAL = 20

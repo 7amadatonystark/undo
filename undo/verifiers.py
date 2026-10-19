@@ -29,8 +29,7 @@ def always_rollback(before, after):
 # ---------- rule-based verifier ----------
 # Each rule looks at before/after and returns a reason string if it is worried, else None.
 
-MASS_CHANGE_LIMIT = 0.5     # more than this fraction of rows deleted/changed is suspicious
-SHRINK_LIMIT = 0.5          # a file rewritten to less than this fraction of its size
+from .settings import MASS_CHANGE_LIMIT, SHRINK_LIMIT   # undo/settings.py
 BROADCAST_ADDRESSES = {"all_customers", "all_users", "everyone"}
 
 
@@ -82,7 +81,7 @@ def rules(before, after):
 
 # ---------- diff-size verifier ----------
 
-DIFF_LIMIT = 3              # roll back if more than this many things changed
+from .settings import DIFF_LIMIT   # undo/settings.py
 
 
 def count_changes(before, after):

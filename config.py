@@ -40,4 +40,4 @@ EXTRA_AGENT_MODELS = [m.strip() for m in os.getenv("EXTRA_AGENT_MODELS", "").spl
 
 # How random the agent's choices are (0 = almost always the same answer). Some randomness
 # lets repeated runs differ like real use. It is the SAME in every run and saved with each run.
-AGENT_TEMPERATURE = 0.7
+from undo.settings import AGENT_TEMPERATURE     # kept in undo/settings.py with the other tunable numbers

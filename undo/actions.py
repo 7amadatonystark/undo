@@ -16,6 +16,8 @@ import shutil
 import sqlite3
 import uuid
 
+from .sandbox import COMPANY_ACCOUNTS
+
 REVERSIBLE = "REVERSIBLE"        # a real inverse exists (restore the old file)
 COMPENSABLE = "COMPENSABLE"      # no true undo, but a correcting action exists
 IRREVERSIBLE = "IRREVERSIBLE"    # nothing can undo it -> a human must approve first
@@ -230,33 +232,23 @@ COMPANY_DOMAIN = "@company.example"     # the company's own email addresses
 class SendEmail(Action):
     """You can't un-send an email. You CAN send a correction, but only to people we know.
 
-    Its kind depends on WHO it goes to (Step 4 finding):
-      - a mailing-list name (no "@", e.g. all_customers or team), a company address, or a
-        customer already in the database -> COMPENSABLE: a correction reaches the same people
-      - any other address -> IRREVERSIBLE: data sent outside the company cannot be taken back
-        (a correction email does not un-leak it), so a human must approve it first
+    By default an email is COMPENSABLE: a correction reaches the same people. But the kind of
+    ONE email depends on who it goes to and what it carries, so undo/classifier.py decides each
+    call (Step I1): an email to an unknown outside address, or one carrying a secret or other
+    customers' data, is IRREVERSIBLE (a correction does not un-leak anything).
 
     The outbox stores one email per line: "TO:<to> | <subject>", plus " | <body>" when there
     is a body. The body is saved as JSON text, so a multi-line message still fits on one line.
     """
+    kind = COMPENSABLE
 
     def __init__(self, sandbox, to, subject, body=""):
         super().__init__(sandbox)
         self.to, self.subject, self.body = to, subject, body
-        self._kind = None           # decided the first time UNDO asks, see `kind` below
-
-    @property
-    def kind(self):
-        # Decided when the runtime first classifies the email (just before the gate), not when
-        # the action is written, so a customer the task added a moment ago counts as known.
-        # Then kept, so the email can't change kind halfway through (e.g. during a rollback).
-        # On the safe side: a customer DELETED earlier in the same task no longer counts as
-        # known, so emailing them asks a human.
-        if self._kind is None:
-            self._kind = COMPENSABLE if self.goes_to_known_people() else IRREVERSIBLE
-        return self._kind
 
     def goes_to_known_people(self):
+        """A mailing-list name (no "@"), a company address, or a customer in the database right
+        now. A customer DELETED earlier in the same task no longer counts (the safe side)."""
         to = self.to.strip().lower()
         if "@" not in to or to.endswith(COMPANY_DOMAIN):
             return True                                 # a list name, or our own company
@@ -277,12 +269,29 @@ class SendEmail(Action):
         line = f"TO:{self.to} | {self.subject}"
         if self.body:
             line += f" | {json.dumps(self.body, ensure_ascii=False)}"
+        self.line = line                    # kept, so erase() can find it again
         with open(self.sb.outbox_path, "a", encoding="utf-8") as f:
             f.write(line + "\n")
 
     def undo(self):
+        # A correction only helps if it arrives BEFORE the email was read (Step I2's outside
+        # world). The runtime sets `late` when it was already read; that correction is written
+        # differently, so it does not count as undoing anything.
+        if getattr(self, "late", False):
+            note = f"LATE CORRECTION, already read: please ignore '{self.subject}'"
+        else:
+            note = f"CORRECTION: please ignore '{self.subject}'"
         with open(self.sb.outbox_path, "a", encoding="utf-8") as f:
-            f.write(f"TO:{self.to} | CORRECTION: please ignore '{self.subject}'\n")
+            f.write(f"TO:{self.to} | {note}\n")
+
+    def erase(self):
+        """Step I2: the email was still HELD (never delivered), so remove it from the outbox
+        completely, with no correction: nobody ever saw it."""
+        lines = self.sb.outbox_lines()
+        if self.line in lines:
+            del lines[len(lines) - 1 - lines[::-1].index(self.line)]      # the last copy
+        with open(self.sb.outbox_path, "w", encoding="utf-8") as f:
+            f.writelines(line + "\n" for line in lines)
 
 
 def read_outbox_line(line):
@@ -303,15 +312,23 @@ def read_outbox_line(line):
 # ---------------- IRREVERSIBLE ----------------
 
 class TransferMoney(Action):
-    """Once money leaves, it is gone. Only a human can allow this."""
+    """Once money leaves, it is gone. Only a human can allow this. The exception (Step I1):
+    money moved to another of the company's OWN accounts can be moved back, so the classifier
+    makes that call COMPENSABLE, and undo() moves it back."""
     kind = IRREVERSIBLE
 
     def __init__(self, sandbox, amount, to="supplier"):
         super().__init__(sandbox)
         self.amount, self.to = amount, to
+        self.new_account = False
 
     def describe(self):
         return f"transfer {self.amount} to '{self.to}'"
+
+    def prepare(self):
+        # Remember if this transfer CREATES the account, so moving the money back can remove it
+        # again (found by undo_conformance.py, Step I4: an empty account was left behind).
+        self.new_account = self.to not in self.sb.bank()
 
     def do(self):
         bank = self.sb.bank()
@@ -320,7 +337,21 @@ class TransferMoney(Action):
         self.sb.save_bank(bank)
 
     def undo(self):
-        raise RuntimeError("Irreversible action cannot be undone")
+        if self.to not in COMPANY_ACCOUNTS:
+            raise RuntimeError("Money sent outside the company cannot be undone")
+        self.move_back()                            # a compensating transfer back
+
+    def erase(self):
+        """Step I2: the transfer was still HELD (never settled), so it is simply reversed."""
+        self.move_back()
+
+    def move_back(self):
+        bank = self.sb.bank()
+        bank[self.to] -= self.amount
+        bank["company"] += self.amount
+        if self.new_account and bank[self.to] == 0:
+            del bank[self.to]                       # the account did not exist before
+        self.sb.save_bank(bank)
 
 
 class DropTable(Action):

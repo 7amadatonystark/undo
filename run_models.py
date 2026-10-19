@@ -12,7 +12,7 @@ Pick models that support tool calls (check with: python run_models.py --check).
 Runs are saved to results/runs.jsonl as batch "step10" (resumable).
 
     python run_models.py --check                      # 1 test call per model: can it use tools?
-    python run_models.py                              # every extra model, RUNS runs each
+    python run_models.py                              # every extra model, RUNS good runs per task
     python run_models.py --models a/model,b/model     # instead of EXTRA_AGENT_MODELS
 """
 
@@ -30,7 +30,10 @@ from run_final import FINAL_FILE, final_records, save_shared
 from scenarios import SCENARIOS
 
 BATCH = "step10"
-RUNS = 3
+# Good runs needed per task (scenario + condition) for each extra model. It was 3, but NVIDIA's
+# free tier kept timing out on the biggest models, so 3 would have taken days. One good run of
+# every task still compares the models fairly: each model is scored on the same tasks, once.
+RUNS = 1
 VERIFIER = "combined"
 
 
@@ -76,6 +79,36 @@ def model_records(models):
     return latest
 
 
+def good_runs(done, model, scenario, condition):
+    """The run numbers this model already has a good (saved, error-free) run for."""
+    return sorted(r for (m, s, c, r) in done if (m, s, c) == (model, scenario, condition))
+
+
+def planned_jobs(done, models, runs):
+    """(model, scenario, condition, run) for every task short of `runs` good runs. A run that
+    ended in an API error is not good, so its run number is used again."""
+    jobs = []
+    for m in models:
+        for s in all_scenarios():
+            for c in CONDITIONS:
+                have = good_runs(done, m, s["name"], c)
+                free = (n for n in range(1, 100) if n not in have)
+                jobs += [(m, s, c, next(free)) for _ in range(runs - len(have))]
+    return jobs
+
+
+def first_runs(records, runs):
+    """Only the `runs` lowest-numbered good runs of each task, so every model is scored on the
+    same number of runs per task (a model that happened to finish more is not counted more)."""
+    keep = {}
+    for r in sorted(records, key=lambda r: r["run"]):
+        task = (r["model"], r["scenario"], r["condition"])
+        keep.setdefault(task, [])
+        if len(keep[task]) < runs:
+            keep[task].append(r)
+    return [r for rs in keep.values() for r in rs]
+
+
 def scoreboard(records, models):
     print(f"\n{'MODEL':42s} {'DAMAGE, NO UNDO':>30s} {'DAMAGE, UNDO':>30s} {'p':>8s} "
           f"{'ATTACK OBEYED':>14s}")
@@ -99,7 +132,11 @@ def main():
     parser.add_argument("--models", help="comma-separated agent models (default: EXTRA_AGENT_MODELS)")
     parser.add_argument("--check", action="store_true", help="only test that each model calls tools")
     parser.add_argument("--runs", type=int, default=RUNS)
+    parser.add_argument("--worker", default="1/1", metavar="I/N",
+                        help="run share I of N side by side (all share one throttle, like run_final.py)")
     args = parser.parse_args()
+    i, n = map(int, args.worker.split("/"))
+    llm.SHARED_CLOCK = FINAL_FILE.parent / "llm_clock.txt"     # together at most 30 requests/min
     main_model = config.AGENT_MODEL
     extra = ([m.strip() for m in args.models.split(",") if m.strip()] if args.models
              else config.EXTRA_AGENT_MODELS)
@@ -111,21 +148,21 @@ def main():
             print(f"{model}: {check(model)}")
         return
 
-    done = model_records(extra)
-    planned = [(m, s, c, n) for n in range(1, args.runs + 1) for m in extra
-               for s in all_scenarios() for c in CONDITIONS if (m, s["name"], c, n) not in done]
+    planned = planned_jobs(model_records(extra), extra, args.runs)[i - 1::n]
     print(f"Batch {BATCH!r}: {len(planned)} run(s) to do on {len(extra)} model(s). "
           f"About {len(planned) * 8} API calls, roughly {len(planned)} min.")
-    for i, (model, scenario, condition, n) in enumerate(planned, 1):
+    for k, (model, scenario, condition, run) in enumerate(planned, 1):
         use_model(model)
-        print(f"[{i}/{len(planned)}] {model} {scenario['name']} [{condition}] run {n}", flush=True)
-        record = run_one(scenario, condition, run_number=n, batch=BATCH, verifier=VERIFIER)
+        print(f"[{k}/{len(planned)}] {model} {scenario['name']} [{condition}] run {run}", flush=True)
+        record = run_one(scenario, condition, run_number=run, batch=BATCH, verifier=VERIFIER)
         save_shared(record)
         print(f"      outcome={record['outcome']} stop={record['stop_reason']}", flush=True)
     use_model(main_model)
 
     models = [main_model] + extra
-    scoreboard([r for r in model_records(extra).values() if r["run"] <= max(args.runs, 5)], models)
+    records = model_records(extra).values()
+    main_runs = [r for r in records if r["model"] == main_model]
+    scoreboard(main_runs + first_runs([r for r in records if r["model"] in extra], args.runs), models)
 
 
 if __name__ == "__main__":

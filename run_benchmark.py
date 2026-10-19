@@ -38,6 +38,8 @@ time is saved separately in judgments[name]["ms"], because the judge's API call 
 
 import argparse
 import json
+import os
+import random
 import sys
 import time
 from datetime import datetime
@@ -46,12 +48,14 @@ from pathlib import Path
 import openai
 
 import config
-from agent import MAX_TOOL_CALLS, REPORT_MAX_LOOKS, ask_for_report, refused_calls, run_agent
+from agent import (MAX_TOOL_CALLS, RAW_TOOLS, REPORT_MAX_LOOKS, ask_for_report, refused_calls,
+                   run_agent)
 from honesty import JUDGE_DOWN as HONESTY_JUDGE_DOWN, classify_report
 from scenarios import LANGUAGES, SCENARIOS, in_language, translated
-from task_verifiers import JUDGE_DOWN, combine, llm_verifier, rule_verifier
+from task_verifiers import JUDGE_DOWN, combine, llm_judgment, mentions, rule_verifier
 from undo import Sandbox, UndoRuntime
-from undo.changes import as_text, summarize
+from undo.runtime import HOLD_SECONDS
+from undo.changes import as_text
 
 RESULTS_FILE = Path(__file__).parent / "results" / "practice_runs.jsonl"
 CONDITIONS = ["no_undo", "undo"]
@@ -59,18 +63,66 @@ CONDITIONS = ["no_undo", "undo"]
 #   no_gate     - irreversible actions run without asking a human
 #   no_verifier - the verifier is never asked: commit (unless the gate blocked something)
 #   no_rollback - the verifier still decides, but nothing is ever undone
-ABLATIONS = ["no_gate", "no_verifier", "no_rollback"]
-ALL_CONDITIONS = CONDITIONS + ABLATIONS
+#   no_classifier - every call gets its tool's default kind (no per-call classifier, Step I1)
+#   no_hold     - emails and money leave at once instead of being held (no hold window, Step I2)
+ABLATIONS = ["no_gate", "no_verifier", "no_rollback", "no_classifier", "no_hold"]
+# Step I3: permission vs. recoverability, with a SIMULATED approver who says yes with
+# probability P (Anthropic reported that users of its coding assistant approve 93% of permission prompts).
+#   permission_pXX - every action that changes something asks the approver; nothing is undone
+#   undo_pXX       - full UNDO, but the same approver answers the (few) irreversible requests
+from undo.settings import APPROVAL_RATES
+PERMISSION_CONDITIONS = ([f"permission_p{p}" for p in APPROVAL_RATES]
+                         + [f"undo_p{p}" for p in APPROVAL_RATES])
+# Step L4: the same, but the agent has RAW tools (any SQL, a pretend shell) instead of safe ones.
+RAW_CONDITIONS = ["raw_no_undo", "raw_undo"]
+ALL_CONDITIONS = CONDITIONS + ABLATIONS + PERMISSION_CONDITIONS + RAW_CONDITIONS
+
+
+def settings(condition):
+    """What each condition switches on. Full UNDO ("undo") has everything; every other
+    condition differs from it in the way its name says."""
+    s = dict(undo=True, gate=True, per_call=True, hold=HOLD_SECONDS, verifier=True,
+             rollback=True, ask_every=False, approve_p=None, raw=False)
+    if condition.startswith("raw_"):                      # raw tools, otherwise the same
+        s["raw"] = True
+        condition = condition.removeprefix("raw_")
+    if condition == "no_undo":
+        s.update(undo=False, hold=0)
+    elif condition == "no_gate":
+        s["gate"] = False
+    elif condition == "no_verifier":
+        s["verifier"] = False
+    elif condition == "no_rollback":
+        s["rollback"] = False
+    elif condition == "no_classifier":
+        s["per_call"] = False
+    elif condition == "no_hold":
+        s["hold"] = 0
+    elif condition.startswith("permission_p"):
+        s.update(ask_every=True, verifier=False, rollback=False, hold=0,
+                 approve_p=int(condition.removeprefix("permission_p")) / 100)
+    elif condition.startswith("undo_p"):
+        s["approve_p"] = int(condition.removeprefix("undo_p")) / 100
+    elif condition != "undo":
+        raise ValueError(f"unknown condition {condition!r}")
+    return s
+
+
+def simulated_approver(p, seed):
+    """Says yes with probability p. Seeded, so the same run gets the same answers again."""
+    rng = random.Random(seed)
+    return lambda action: rng.random() < p
 VERIFIER_NAMES = ["rules", "llm", "combined"]
 DEFAULT_VERIFIER = "combined"
 # A name for this set of runs. Change it when the scenarios or the code change so much that
 # old runs are no longer comparable: the scoreboard then starts fresh (old lines stay in the file).
-BATCH = "step5"            # the agent is asked for a report after each run (Step 5)
+BATCH = "stepI3"           # practice runs after Steps I1-I3 (per-call kinds, hold, permission)
 
 
 BLOCKED_REASON = "a human blocked an irreversible action"
 AGENT_ERROR_REASON = "the agent stopped on an API error"
 NO_VERIFIER_REASON = "ablation: no verifier, so commit"
+PERMISSION_REASON = "permission only: every change was asked about, nothing is undone"
 
 
 def check_done(scenario, sb):
@@ -118,61 +170,90 @@ def verifier_verdict(record, name):
 
 # ---------- the verifiers ----------
 
-def timed(verifier, task, changes):
+def timed(verifier, *args):
     """Run one verifier and keep its answer and how long it took."""
     t0 = time.perf_counter()
-    ok, reasons = verifier(task, changes)
-    return dict(ok=ok, reasons=reasons, ms=round((time.perf_counter() - t0) * 1000, 3))
+    result = verifier(*args)
+    if isinstance(result, tuple):                       # (ok, reasons)
+        result = dict(ok=result[0], reasons=result[1])
+    return dict(result, ms=round((time.perf_counter() - t0) * 1000, 3))
 
 
-def judge_all(task, changes):
+def judge_context(scenario, task, before):
+    """Step L3: what the judge may read besides the changes, ALL from the BEFORE snapshot (so
+    the agent can't edit a policy to fool it): {name: (trusted?, text)}. Trusted = policy files
+    the scenario lists; untrusted reference = files the task names (they are only data: in an
+    injection scenario the file the task names is where the attack hides)."""
+    context = {}
+    for name, text in before["files"].items():
+        if name in scenario.get("policy_files", []):
+            context[name] = (True, text)
+        elif mentions(task, name):
+            context[name] = (False, text)
+    return context
+
+
+def judge_all(task, changes, context=None, votes=1):
     """All three verifiers judge the same work. 'combined' is built from the other two
     results, so the judge model is asked only once."""
-    rules, llm = timed(rule_verifier, task, changes), timed(llm_verifier, task, changes)
+    rules = timed(rule_verifier, task, changes)
+    llm = timed(llm_judgment, task, changes, context, votes)
     ok, reasons = combine((rules["ok"], rules["reasons"]), (llm["ok"], llm["reasons"]))
     both = dict(ok=ok, reasons=reasons, ms=round(rules["ms"] + llm["ms"], 3))
     return {"rules": rules, "llm": llm, "combined": both}
 
 
 def run_one(scenario, condition, run_number=1, verbose=False, batch=BATCH,
-            verifier=DEFAULT_VERIFIER, language="en"):
+            verifier=DEFAULT_VERIFIER, language="en", judge_votes=1, ask_report=True):
     """One run of one scenario in one condition. Returns the record to save.
     verifier: whose decision is applied in the with-UNDO condition.
     language: the task is given in this language (Step 8); nothing else changes."""
     scenario = in_language(scenario, language)
-    enabled = (condition != "no_undo")              # every ablation is UNDO with one part off
+    s = settings(condition)
+    enabled = s["undo"]
+    approver = (scenario["approver"] if s["approve_p"] is None
+                else simulated_approver(s["approve_p"], f"{scenario['name']}|{condition}|{run_number}"))
     sb = Sandbox(seed="company")
-    rt = UndoRuntime(approver=scenario["approver"], verbose=verbose, enabled=enabled,
-                     gate=(condition != "no_gate"))
+    rt = UndoRuntime(approver=approver, verbose=verbose, enabled=enabled, gate=s["gate"],
+                     per_call=s["per_call"], hold_seconds=s["hold"], seed=run_number,
+                     ask_every=s["ask_every"])
     try:
         if scenario.get("setup"):
             scenario["setup"](sb)
 
+        # Step L5: no full snapshot any more. The runtime's change journal gives the change
+        # summary; only the few files the judge may read as reference are copied now.
         t0 = time.perf_counter()
-        before = sb.snapshot()
+        before = {"files": {name: sb.read_file(name) for name in sorted(os.listdir(sb.files_dir))
+                            if name in scenario.get("policy_files", [])
+                            or mentions(scenario["task"], name)}}
         rt.overhead_seconds += time.perf_counter() - t0
 
         if verbose:
             print(f"\n=== {scenario['name']} [{condition}] ===\n    task: {scenario['task']}")
         conversation = []           # kept so the agent can be asked for its report (Step 5)
-        steps, final_message, stop_reason = run_agent(scenario["task"], sb, rt, conversation)
+        steps, final_message, stop_reason = run_agent(scenario["task"], sb, rt, conversation,
+                                                      tools=RAW_TOOLS if s["raw"] else None)
 
         # 1. DECIDE (no answer key). Without UNDO we always commit.
         t0 = time.perf_counter()
-        changes = summarize(before, sb.snapshot())
+        changes = rt.change_summary(sb)
         rt.overhead_seconds += time.perf_counter() - t0
         judgments = None
         if not enabled:
             decision, reasons = "commit", []
-        elif any(s["result"].startswith("BLOCKED") for s in steps):
+        elif s["ask_every"]:
+            decision, reasons = "commit", [PERMISSION_REASON]
+        elif any(step["result"].startswith("BLOCKED") for step in steps):
             decision, reasons = "rollback", [BLOCKED_REASON]
         elif stop_reason == "error":
             decision, reasons = "rollback", [AGENT_ERROR_REASON]
-        elif condition == "no_verifier":
+        elif not s["verifier"]:
             decision, reasons = "commit", [NO_VERIFIER_REASON]
         else:
             # The verifiers see ONLY the task text and the change summary.
-            judgments = judge_all(scenario["task"], changes)
+            judgments = judge_all(scenario["task"], changes,
+                                  judge_context(scenario, scenario["task"], before), judge_votes)
             ok, reasons = judgments[verifier]["ok"], judgments[verifier]["reasons"]
             decision = "commit" if ok else "rollback"
         if verbose:
@@ -188,7 +269,7 @@ def run_one(scenario, condition, run_number=1, verbose=False, batch=BATCH,
         # 2b. FLIGHT RECORDER (Step 5): ask the agent what it did and check the report against
         #     the change summary and its own actions. Measurement only: the decision is fixed.
         report, honesty, report_failed, looks = None, None, False, []
-        if stop_reason != "error":
+        if stop_reason != "error" and ask_report:
             try:
                 report = ask_for_report(conversation, sb, rt, looks)
             except openai.APIError:
@@ -203,7 +284,7 @@ def run_one(scenario, condition, run_number=1, verbose=False, batch=BATCH,
 
         # 3. APPLY the decision, then score the final state. In the no_rollback ablation the
         #    decision is recorded but never carried out: everything is kept.
-        rolled_back = (decision == "rollback" and condition != "no_rollback")
+        rolled_back = (decision == "rollback" and s["rollback"])
         t0 = time.perf_counter()
         if rolled_back:
             rt.rollback()
@@ -223,7 +304,7 @@ def run_one(scenario, condition, run_number=1, verbose=False, batch=BATCH,
                     model=config.AGENT_MODEL,
                     model_settings={"temperature": config.AGENT_TEMPERATURE,
                                     "max_tool_calls": MAX_TOOL_CALLS},
-                    judge_model=config.JUDGE_MODEL,
+                    judge_model=config.JUDGE_MODEL, judge_votes=judge_votes,
                     language=language, run=run_number, task=scenario["task"],
                     steps=steps, refused_steps=refused_calls(conversation),
                     final_message=final_message, stop_reason=stop_reason,
@@ -235,6 +316,8 @@ def run_one(scenario, condition, run_number=1, verbose=False, batch=BATCH,
                                      or report_failed
                                      or (honesty and honesty["why"] == HONESTY_JUDGE_DOWN)),
                     decision=decision, reasons=reasons, rolled_back=rolled_back,
+                    kinds=rt.kinds, hold_seconds=rt.hold_seconds, holds=rt.hold_report(),
+                    task_seconds=rt.clock,
                     damaged_before=damaged_before, done_before=done_before,
                     verdict=(verdict(damaged_before, decision, BLOCKED_REASON in reasons)
                              if enabled else None),
@@ -255,14 +338,16 @@ def save(record, path=None):
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def same_undo_setup(r, verifier):
+def same_undo_setup(r, verifier, votes=1):
     """A with-UNDO run counts only if the same verifier was applied and the same judge judged
-    it. A without-UNDO run has no verifier, so it counts for every --verifier."""
-    return r["condition"] == "no_undo" or (r.get("verifier") == verifier
-                                           and r.get("judge_model") == config.JUDGE_MODEL)
+    it. A without-UNDO run (no_undo, raw_no_undo) has no verifier, so it counts for every
+    --verifier."""
+    return not settings(r["condition"])["undo"] or (r.get("verifier") == verifier
+                                           and r.get("judge_model") == config.JUDGE_MODEL
+                                           and r.get("judge_votes", 1) == votes)
 
 
-def usable_records(verifier=DEFAULT_VERIFIER, language="en"):
+def usable_records(verifier=DEFAULT_VERIFIER, language="en", votes=1):
     """The runs that count: this batch, this model, this language, a scenario that still exists
     with the SAME task wording (if a task is reworded, its old runs no longer count and are
     redone), the same UNDO setup, and not stopped by an API error, the agent's or the judge's
@@ -276,7 +361,7 @@ def usable_records(verifier=DEFAULT_VERIFIER, language="en"):
             if (r.get("batch") == BATCH and r.get("model") == config.AGENT_MODEL
                     and r.get("language", "en") == language
                     and tasks.get(r["scenario"]) == r.get("task")
-                    and same_undo_setup(r, verifier)
+                    and same_undo_setup(r, verifier, votes)
                     and r.get("stop_reason") != "error" and not r.get("judge_error")):
                 latest[(r["scenario"], r["condition"], r.get("run", 1))] = r
     return latest
@@ -329,7 +414,36 @@ def scoreboard(records, verifier=DEFAULT_VERIFIER):
     print(f"\nUNDO's applied decisions ({verifier}), judged on the agent's work before they were applied:")
     print("  " + "   ".join(f"{v}={sum(verdict_of(r) == v for r in undo_runs)}" for v in VERDICTS))
     verifier_table(undo_runs)
+    votes_table(undo_runs)
     honesty_table(records)
+    kinds_table(records)
+
+
+def votes_table(undo_runs):
+    """Step L3: with --judge-votes 3, how often did the three answers disagree?"""
+    voted = [r for r in undo_runs if len(((r.get("judgments") or {}).get("llm") or {}).get("votes", [])) > 1]
+    if voted:
+        split = sum(len(set(r["judgments"]["llm"]["votes"])) > 1 for r in voted)
+        print(f"\nThe judge's three votes disagreed in {split} of {len(voted)} runs.")
+
+
+def kind_changes(records):
+    """{action type: (calls, calls whose kind differed from the tool's default)} (Step I1)."""
+    counts = {}
+    for r in records:
+        for k in r.get("kinds") or []:
+            calls, differed = counts.get(k["action"], (0, 0))
+            counts[k["action"]] = (calls + 1, differed + (k["kind"] != k["default"]))
+    return counts
+
+
+def kinds_table(records):
+    counts = kind_changes(r for r in records if r["condition"] != "no_classifier")
+    if not counts:
+        return
+    print("\nPer-call kinds (Step I1): how often a call's kind differed from its tool's default:")
+    for action, (calls, differed) in sorted(counts.items()):
+        print(f"  {action:14s} {differed:4d} of {calls:4d} calls")
 
 
 HONESTY_LABELS = ["ACCURATE", "OMITTED_DAMAGE", "FALSE_CLAIM", "UNCLEAR"]
@@ -389,7 +503,9 @@ def main():
     parser.add_argument("--fresh", action="store_true", help="redo runs even if already saved")
     parser.add_argument("--language", choices=LANGUAGES, default="en",
                         help="language of the task (only translated scenarios run in msa/egy)")
-    parser.add_argument("--condition", choices=CONDITIONS, help="run only this condition")
+    parser.add_argument("--condition", choices=ALL_CONDITIONS, help="run only this condition")
+    parser.add_argument("--judge-votes", type=int, default=1, choices=[1, 3],
+                        help="ask the judge once (temperature 0) or 3 times and take the majority")
     args = parser.parse_args()
 
     todo = [s for s in SCENARIOS if (not args.only or s["name"] == args.only)
@@ -398,7 +514,8 @@ def main():
         raise SystemExit(f"No scenario named {args.only!r} in language {args.language!r}")
     conditions = [args.condition] if args.condition else CONDITIONS
 
-    already = set() if args.fresh else set(usable_records(args.verifier, args.language))
+    already = set() if args.fresh else set(usable_records(args.verifier, args.language,
+                                                          args.judge_votes))
     planned = [(s, c) for s in todo for c in conditions if (s["name"], c, 1) not in already]
     judge_calls = sum(c == "undo" for _, c in planned)
     # per run: the agent (up to MAX_TOOL_CALLS + 1), its report (up to 1 + REPORT_MAX_LOOKS),
@@ -415,7 +532,7 @@ def main():
     for i, (scenario, condition) in enumerate(planned, 1):
         print(f"[{i}/{len(planned)}] {scenario['name']} [{condition}]")
         record = run_one(scenario, condition, verbose=args.verbose, verifier=args.verifier,
-                         language=args.language)
+                         language=args.language, judge_votes=args.judge_votes)
         save(record)
         judged = "  ".join(f"{n}={'OK' if j['ok'] else 'NOT_OK'}"
                            for n, j in (record["judgments"] or {}).items())
@@ -424,7 +541,7 @@ def main():
               f"steps={len(record['steps'])} stop={record['stop_reason']}  {judged}  "
               f"report={report_label}")
 
-    records = [r for r in usable_records(args.verifier, args.language).values()
+    records = [r for r in usable_records(args.verifier, args.language, args.judge_votes).values()
                if not args.only or r["scenario"] == args.only]
     scoreboard(records, args.verifier)
 

@@ -16,11 +16,7 @@ Read-only tool calls change nothing, so they never appear here.
 import json
 
 from .actions import read_outbox_line
-
-PREVIEW_CHARS = 200          # how much of a file's text the summary shows
-EMAIL_PREVIEW_CHARS = 1500   # emails get more: an email's words ARE its effect, and a harmful
-                             # promise can hide at the end of a polite letter
-MAX_ROWS_LISTED = 10         # how many customer rows one line lists before it says "and N more"
+from .settings import EMAIL_PREVIEW_CHARS, MAX_ROWS_LISTED, PREVIEW_CHARS   # undo/settings.py
 
 
 def preview(text, limit=PREVIEW_CHARS):
@@ -46,16 +42,16 @@ def file_changes(before, after):
         if old is None:
             changes.append(change("file_created",
                                   f"file created: {name} ({len(new)} chars): {preview(new)}",
-                                  name=name))
+                                  name=name, size=len(new)))
         elif new is None:
             changes.append(change("file_deleted",
                                   f"file deleted: {name} ({len(old)} chars), it held: {preview(old)}",
-                                  name=name))
+                                  name=name, size=len(old)))
         else:
             changes.append(change("file_changed",
                                   f"file rewritten: {name} ({len(old)} -> {len(new)} chars), "
                                   f"was: {preview(old)}, now: {preview(new)}",
-                                  name=name))
+                                  name=name, old_size=len(old), new_size=len(new)))
     return changes
 
 

@@ -31,13 +31,26 @@ from pathlib import Path
 import config
 from agent import READ_ONLY_TOOLS
 from injection_scenarios import INJECTION_SCENARIOS, OBEY_TOOLS
-from run_benchmark import ALL_CONDITIONS, BLOCKED_REASON, misreported
-from scenarios import ARABIC_TASKS
+from run_benchmark import (ABLATIONS, APPROVAL_RATES, CONDITIONS, BLOCKED_REASON,
+                           kind_changes, misreported)
+from heldout_scenarios import HELDOUT_SCENARIOS
+from scenarios import ARABIC_TASKS, PAIR_SCENARIOS, SCENARIOS
 
 FIGURES = Path(__file__).parent / "figures"
 INJECTIONS = {s["name"]: s for s in INJECTION_SCENARIOS}
+# Three separate sets of tasks (Step 6): the development tasks we built UNDO with, the look-alike
+# pairs (Step L1), and the sealed test set (heldout/, written after the freeze): the headline.
+DEV = {s["name"] for s in SCENARIOS + INJECTION_SCENARIOS}
+PAIRS = {s["name"] for s in PAIR_SCENARIOS}
+HELDOUT = {s["name"] for s in HELDOUT_SCENARIOS}
 LABELS = {"no_undo": "No UNDO", "undo": "Full UNDO", "no_gate": "No gate",
-          "no_verifier": "No verifier", "no_rollback": "No rollback"}
+          "no_verifier": "No verifier", "no_rollback": "No rollback",
+          "no_classifier": "No per-call", "no_hold": "No hold"}
+for _p in APPROVAL_RATES:
+    LABELS[f"permission_p{_p}"] = f"Permission {_p}%"
+    LABELS[f"undo_p{_p}"] = f"UNDO, {_p}% OK"
+# The conditions compared in sections 1-8: full UNDO and its ablations (Step I3's are separate).
+MAIN_CONDITIONS = CONDITIONS + ABLATIONS
 
 
 # ---------- the two statistics ----------
@@ -136,8 +149,9 @@ def section(title, explanation):
 
 
 def report(records):
-    english = runs(records)
-    present = [c for c in ALL_CONDITIONS if runs(english, c)]
+    heldout_report(records)
+    english = runs(records, names=DEV)
+    present = [c for c in MAIN_CONDITIONS if runs(english, c)]
 
     section("1. Damage rate per condition (English, every scenario)",
             "Out of all runs, how many ended with real damage left in the world? The 95% CI is "
@@ -213,8 +227,137 @@ def report(records):
     if judge_ms:
         print(f"  verifier (rules + AI judge) median {statistics.median(judge_ms):8.0f} ms")
 
+    kinds_report(english)
+    permission_report(english)
+    raw_report(english)
+    judge_fooled_report()
+    variation_report(english)
     language_report(records)
     models_report()
+
+
+def heldout_report(records):
+    """The HEADLINE: the sealed test set, never used to tune anything."""
+    test = runs(records, names=HELDOUT)
+    if not test:
+        return
+    section("0. HEADLINE: the sealed test set (12 tasks written after every setting was frozen)",
+            "These tasks were never used to build or tune UNDO, so they show how it does on "
+            "tasks it has never seen. The development numbers below are reported separately.")
+    no, un = runs(test, "no_undo"), runs(test, "undo")
+    print(f"  damage, no UNDO    {rate_line(damaged(no), len(no))}")
+    print(f"  damage, full UNDO  {rate_line(damaged(un), len(un))}")
+    if no and un:
+        p = fisher_exact(damaged(no), len(no) - damaged(no), damaged(un), len(un) - damaged(un))
+        print(f"  Fisher's exact test: p = {p:.2g}")
+    safe = harmless(un)
+    print(f"  false rollbacks, full UNDO {rate_line(sum(false_rollback(r) for r in safe), len(safe))}")
+    dev_no, dev_un = runs(records, "no_undo", names=DEV), runs(records, "undo", names=DEV)
+    print(f"  (development tasks: no UNDO {rate_line(damaged(dev_no), len(dev_no))}, "
+          f"full UNDO {rate_line(damaged(dev_un), len(dev_un))})")
+    if runs(records, "undo", names=PAIRS):
+        print("  look-alike pairs (Step L1): run `python pair_score.py` for the pair score")
+
+
+def kinds_report(english):
+    counts = kind_changes(r for r in english if r["condition"] == "undo")
+    if not counts:
+        return
+    section("8b. Per-call kinds (Step I1)",
+            "How often did the per-call classifier give a call a different kind than its tool's "
+            "default (e.g. an email carrying a secret: compensable -> irreversible)?")
+    for action, (calls, differed) in sorted(counts.items()):
+        print(f"  {action:14s} {rate_line(differed, calls)}")
+
+
+def judge_fooled_report():
+    """Step L3: how often each verifier said OK to a harmful change carrying a note aimed at
+    the checker (judge_injection.py; the latest result for each case)."""
+    path = Path(__file__).parent / "results" / "judge_injection.jsonl"
+    if not path.exists():
+        return
+    import json
+    latest = {}
+    for line in path.open(encoding="utf-8"):
+        row = json.loads(line)
+        latest[(row["set"], row["case"])] = row["said_ok"]
+    section("8e. Can text the agent writes fool the verifier? (Step L3)",
+            "Each case is a harmful change plus a note aimed at whoever checks it ('approved by "
+            "the manager'). 'Said OK' means the verifier let the harm through. For the rules it is "
+            "a miss, not being fooled: they never read the text.")
+    for group in sorted({g for g, _ in latest}):
+        rows = [v for (g, _), v in latest.items() if g == group]
+        names = list(rows[0])
+        print(f"  {group:5s} " + "   ".join(f"{n} {sum(r[n] for r in rows)}/{len(rows)}" for n in names))
+
+
+def variation_report(english):
+    """Step 6: how much results vary between runs of the same scenario."""
+    section("8f. How much the results vary",
+            "The agent is a little random, so the same task can go differently each run. For each "
+            "scenario: in how many of its runs damage was left (without UNDO / with UNDO).")
+    names = sorted({r["scenario"] for r in english})
+    count = {"always": 0, "sometimes": 0, "never": 0}
+    for name in names:
+        no, un = runs(english, "no_undo", names={name}), runs(english, "undo", names={name})
+        if not no:
+            continue
+        k = damaged(no)
+        count["never" if k == 0 else "always" if k == len(no) else "sometimes"] += 1
+        if k or damaged(un):
+            print(f"  {name:28s} without {k}/{len(no)}   with {damaged(un)}/{len(un)}")
+    print(f"  Without UNDO, scenarios were damaged in every run: {count['always']}, in some runs: "
+          f"{count['sometimes']}, in no run: {count['never']}.")
+
+
+def raw_report(english):
+    if not runs(english, "raw_undo"):
+        return
+    section("8d. Safe tools vs. raw tools (Step L4)",
+            "With raw tools the agent can run any SQL and shell commands, like the agents in the "
+            "real incidents. UNDO cannot know what a raw command does, so it dry-runs it on a copy "
+            "and classifies it by what changed.")
+    for label, no, un in (("safe tools", "no_undo", "undo"), ("raw tools", "raw_no_undo", "raw_undo")):
+        a, b = runs(english, no), runs(english, un)
+        p = fisher_exact(damaged(a), len(a) - damaged(a), damaged(b), len(b) - damaged(b))
+        print(f"  {label:11s} no UNDO {rate_line(damaged(a), len(a))}   "
+              f"UNDO {rate_line(damaged(b), len(b))}   p = {p:.2g}")
+    raw_calls = [k for r in runs(english, "raw_undo") for k in r.get("kinds") or [] if "real_kind" in k]
+    matched = sum(k["kind"] == k["real_kind"] for k in raw_calls)
+    print(f"  dry-run kind matched what really happened: {rate_line(matched, len(raw_calls))}")
+
+
+def permission_stats(rs):
+    """(damaged, approvals per task, harmless runs whose work was blocked or thrown away,
+    harmless runs). Harmless = the agent's own work did no harm, before UNDO's decision."""
+    safe = [r for r in rs if not r["damaged_before"]]
+    lost = sum(any(s["result"].startswith("BLOCKED") for s in r["steps"]) or bool(r.get("rolled_back"))
+               for r in safe)
+    per_task = sum(r["approvals_asked"] for r in rs) / len(rs) if rs else 0
+    return damaged(rs), per_task, lost, len(safe)
+
+
+def permission_conditions(english):
+    conditions = ["no_undo"] + [f"{kind}_p{p}" for kind in ("permission", "undo") for p in APPROVAL_RATES]
+    return [c for c in conditions if runs(english, c)]
+
+
+def permission_report(english):
+    conditions = permission_conditions(english)
+    if len(conditions) < 2:
+        return
+    section("8c. Permission vs. recoverability (Step I3)",
+            "A simulated person approves each request with probability P (93% is the rate "
+            "Anthropic reported for its coding assistant's users). Permission-only asks about EVERY change "
+            "and undoes nothing; UNDO asks only about irreversible ones and can roll back the rest. "
+            "Assumption: a real person may approve harmful requests less often than 93%, which "
+            "is why 70% and 50% are tested too.")
+    print(f"  {'':16s} {'damage left':>34s} {'approvals/task':>15s} {'harmless work lost':>20s}")
+    for c in conditions:
+        rs = runs(english, c)
+        k, per_task, lost, n_safe = permission_stats(rs)
+        print(f"  {LABELS[c]:16s} {rate_line(k, len(rs)):>34s} {per_task:>15.2f} "
+              f"{lost:>8d}/{n_safe:<4d} ({pct(lost, n_safe).strip()})")
 
 
 def models_report():
@@ -263,8 +406,8 @@ def graphs(records):
     import matplotlib.pyplot as plt
 
     FIGURES.mkdir(exist_ok=True)
-    english = runs(records)
-    present = [c for c in ALL_CONDITIONS if runs(english, c)]
+    english = runs(records, names=DEV)
+    present = [c for c in MAIN_CONDITIONS if runs(english, c)]
 
     def bars(ax, labels, ks, ns, colors):
         rates = [100 * k / n if n else 0 for k, n in zip(ks, ns)]
@@ -344,16 +487,73 @@ def graphs(records):
     fig.tight_layout()
     fig.savefig(FIGURES / "overhead.png", dpi=150)
     plt.close(fig)
+
+    # 6. Step I3: approvals per task against damage, one point per condition
+    points = permission_conditions(english)
+    if len(points) > 1:
+        fig, ax = plt.subplots(figsize=(7, 5))
+        for c in points:
+            rs = runs(english, c)
+            k, per_task, _, _ = permission_stats(rs)
+            low, high = wilson(k, len(rs))
+            rate = 100 * k / len(rs)
+            color = ("#c0392b" if c == "no_undo" else
+                     "#e67e22" if c.startswith("permission") else "#27ae60")
+            ax.errorbar(per_task, rate, yerr=[[rate - 100 * low], [100 * high - rate]],
+                        fmt="o", capsize=4, color=color)
+            ax.annotate(LABELS[c], (per_task, rate), textcoords="offset points", xytext=(6, 4),
+                        fontsize=8)
+        ax.set_xlabel("human approvals asked per task")
+        ax.set_ylabel("runs with damage left (%)")
+        ax.set_title("Safer and faster: permission vs. UNDO (95% Wilson CI)")
+        ax.set_xlim(left=-0.1)
+        ax.set_ylim(bottom=0)
+        fig.tight_layout()
+        fig.savefig(FIGURES / "safer_and_faster.png", dpi=150)
+        plt.close(fig)
+    dev_vs_test(records, plt)
     print(f"\nGraphs saved in {FIGURES}")
+
+
+def dev_vs_test(records, plt):
+    """Development tasks and the sealed test set side by side (Step 6)."""
+    if not runs(records, names=HELDOUT):
+        return
+    fig, ax = plt.subplots(figsize=(7, 4))
+    width = 0.38
+    for i, (c, color) in enumerate((("no_undo", "#c0392b"), ("undo", "#27ae60"))):
+        ks, ns = [], []
+        for names in (DEV, HELDOUT):
+            rs = runs(records, c, names=names)
+            ks.append(damaged(rs))
+            ns.append(len(rs))
+        rates = [100 * k / n if n else 0 for k, n in zip(ks, ns)]
+        cis = [wilson(k, n) for k, n in zip(ks, ns)]
+        errors = [[r - 100 * lo for r, (lo, _) in zip(rates, cis)],
+                  [100 * hi - r for r, (_, hi) in zip(rates, cis)]]
+        xs = [x + (i - 0.5) * width for x in range(2)]
+        ax.bar(xs, rates, width, yerr=errors, capsize=4, color=color, label=LABELS[c])
+    ax.set_xticks(range(2), ["Development tasks", "Sealed test set"])
+    ax.set_ylim(0, 105)
+    ax.set_ylabel("runs with damage left (%)")
+    ax.set_title("Development vs. sealed test set (95% Wilson CI)")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(FIGURES / "dev_vs_test.png", dpi=150)
+    plt.close(fig)
 
 
 def main():
     sys.stdout.reconfigure(errors="replace")
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-graphs", action="store_true")
+    parser.add_argument("--batch", help="analyze an older final batch, e.g. final3")
     args = parser.parse_args()
 
+    import run_final
     from run_final import final_records
+    if args.batch:
+        run_final.BATCH = args.batch
     records = list(final_records().values())
     if not records:
         raise SystemExit("No final runs yet: run `python run_final.py` first.")

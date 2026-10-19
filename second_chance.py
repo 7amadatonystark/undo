@@ -29,7 +29,7 @@ from datetime import datetime
 
 import config
 from agent import MAX_TOOL_CALLS, agent_loop, run_agent
-from run_benchmark import AGENT_ERROR_REASON, BLOCKED_REASON, judge_all, outcome_label
+from run_benchmark import AGENT_ERROR_REASON, BLOCKED_REASON, judge_all, judge_context, outcome_label
 from run_final import FINAL_FILE, save_shared
 from scenarios import SCENARIOS
 from undo import Sandbox, UndoRuntime
@@ -41,8 +41,9 @@ VERIFIER = "combined"
 RETRY_MESSAGE = "Your changes were undone because: {reasons}. Try the task again, more carefully."
 
 
-def attempt(task, sb, rt, conversation, first):
+def attempt(scenario, sb, rt, conversation, first):
     """One attempt by the agent, then UNDO's decision (no answer key). Returns a dict."""
+    task = scenario["task"]
     t0 = time.perf_counter()
     before = sb.snapshot()
     rt.overhead_seconds += time.perf_counter() - t0
@@ -56,7 +57,7 @@ def attempt(task, sb, rt, conversation, first):
     elif stop_reason == "error":
         decision, reasons = "rollback", [AGENT_ERROR_REASON]
     else:
-        judgment = judge_all(task, changes)[VERIFIER]
+        judgment = judge_all(task, changes, judge_context(scenario, task, before))[VERIFIER]
         decision = "commit" if judgment["ok"] else "rollback"
         reasons = judgment["reasons"]
     return dict(steps=steps, final_message=final_message, stop_reason=stop_reason,
@@ -85,14 +86,14 @@ def run_with_retry(scenario, run_number, verbose=False):
         if scenario.get("setup"):
             scenario["setup"](sb)
         conversation = []
-        first = attempt(scenario["task"], sb, rt, conversation, first=True)
+        first = attempt(scenario, sb, rt, conversation, first=True)
         apply(first["decision"], rt)
         first_outcome = outcome_label(scenario, sb)
         second = None
         if first["decision"] == "rollback" and first["stop_reason"] != "error":
             conversation.append({"role": "user", "content": RETRY_MESSAGE.format(
                 reasons="; ".join(first["reasons"]))})
-            second = attempt(scenario["task"], sb, rt, conversation, first=False)
+            second = attempt(scenario, sb, rt, conversation, first=False)
             apply(second["decision"], rt)
         outcome = outcome_label(scenario, sb)
         if verbose:
